@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bilkostnadskalkyl - Inställningar</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <header class="header">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 17h8M8 17v-4m8 4v-4m-8 0h8m-8 0l-2-4h12l-2 4M6 17H4a1 1 0 01-1-1v-3a1 1 0 011-1h1m15 5h2a1 1 0 001-1v-3a1 1 0 00-1-1h-1"/>
+        </svg>
+        <span>Bilkostnadskalkyl</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="section">
+        <h2 class="section-title">Körvanor</h2>
+
+        <div class="field">
+          <label for="annualMileage">Årlig körsträcka</label>
+          <div class="input-group">
+            <input type="number" id="annualMileage" min="100" max="100000" step="100">
+            <span class="unit">mil/år</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="ownershipYears">Planerad ägandetid</label>
+          <div class="input-group">
+            <input type="number" id="ownershipYears" min="1" max="20" step="1">
+            <span class="unit">år</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Bränsle</h2>
+
+        <div class="field">
+          <label for="primaryFuelPrice">Bränslepris</label>
+          <div class="input-group">
+            <input type="number" id="primaryFuelPrice" min="1" max="50" step="0.1">
+            <span class="unit">kr/l</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Fasta kostnader</h2>
+
+        <div class="field">
+          <label for="insurance">Försäkring</label>
+          <div class="input-group">
+            <input type="number" id="insurance" min="0" max="50000" step="100">
+            <span class="unit">kr/år</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="parking">Parkering</label>
+          <div class="input-group">
+            <input type="number" id="parking" min="0" max="50000" step="100">
+            <span class="unit">kr/år</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="annualTax">Fordonsskatt</label>
+          <div class="input-group">
+            <input type="number" id="annualTax" min="0" max="30000" step="100">
+            <span class="unit">kr/år</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <button id="resetBtn" class="btn btn-secondary">Återställ</button>
+      <div class="status" id="status"></div>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

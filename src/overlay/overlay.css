@@ -1,0 +1,214 @@
+/* Bilkostnadskalkyl Overlay Styles - Isolated in Shadow DOM */
+
+:host {
+  --bkk-bg: #1e293b;
+  --bkk-bg-secondary: #334155;
+  --bkk-text: #f8fafc;
+  --bkk-text-secondary: #94a3b8;
+  --bkk-accent: #3b82f6;
+  --bkk-accent-hover: #2563eb;
+  --bkk-border: #475569;
+  --bkk-radius: 12px;
+  --bkk-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  display: block;
+  font-family: var(--bkk-font);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.bkk-overlay {
+  background: var(--bkk-bg);
+  color: var(--bkk-text);
+  border-radius: var(--bkk-radius);
+  padding: 16px;
+  margin: 16px 0;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  max-width: 320px;
+  animation: bkk-slideIn 0.3s ease-out;
+}
+
+@keyframes bkk-slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bkk-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  margin-bottom: 12px;
+  user-select: none;
+}
+
+.bkk-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--bkk-accent);
+}
+
+.bkk-logo svg {
+  width: 18px;
+  height: 18px;
+}
+
+.bkk-toggle-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bkk-bg-secondary);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+
+.bkk-header:hover .bkk-toggle-icon {
+  background: var(--bkk-accent);
+}
+
+.bkk-summary {
+  text-align: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--bkk-border);
+}
+
+.bkk-main-cost {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+}
+
+.bkk-value {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--bkk-text);
+}
+
+.bkk-unit {
+  font-size: 14px;
+  color: var(--bkk-text-secondary);
+}
+
+.bkk-secondary {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--bkk-text-secondary);
+}
+
+.bkk-breakdown {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, padding 0.3s ease;
+}
+
+.bkk-breakdown.expanded {
+  max-height: 400px;
+  padding-top: 16px;
+}
+
+.bkk-breakdown-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--bkk-text-secondary);
+  margin-bottom: 10px;
+}
+
+.bkk-breakdown-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.bkk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.bkk-label {
+  flex: 1;
+  color: var(--bkk-text-secondary);
+}
+
+.bkk-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.bkk-estimated {
+  color: var(--bkk-accent);
+  font-style: italic;
+}
+
+.bkk-estimated::before {
+  content: '~';
+}
+
+.bkk-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bkk-border);
+}
+
+.bkk-settings-btn {
+  width: 100%;
+  padding: 10px;
+  background: var(--bkk-bg-secondary);
+  border: 1px solid var(--bkk-border);
+  border-radius: 8px;
+  color: var(--bkk-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.bkk-settings-btn:hover {
+  background: var(--bkk-accent);
+  border-color: var(--bkk-accent);
+}
+
+.bkk-settings-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.bkk-note {
+  font-size: 11px;
+  color: var(--bkk-text-secondary);
+  text-align: center;
+  margin-top: 10px;
+}
+
+.bkk-note a {
+  color: var(--bkk-accent);
+  text-decoration: none;
+}
+
+.bkk-note a:hover {
+  text-decoration: underline;
+}
