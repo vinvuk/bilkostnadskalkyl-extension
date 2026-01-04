@@ -114,15 +114,49 @@ function hasStrikethrough(element: Element): boolean {
     // Check for strikethrough tags
     const tagName = current.tagName.toLowerCase();
     if (tagName === 's' || tagName === 'strike' || tagName === 'del') {
+      console.log('[Bilkostnadskalkyl] Strikethrough detected via tag:', tagName);
       return true;
     }
-    // Check for strikethrough CSS
+    // Check for strikethrough CSS (both old and new property names)
     const style = window.getComputedStyle(current);
-    if (style.textDecoration.includes('line-through')) {
+    const textDec = style.textDecoration || '';
+    const textDecLine = style.textDecorationLine || '';
+    if (textDec.includes('line-through') || textDecLine.includes('line-through')) {
+      console.log('[Bilkostnadskalkyl] Strikethrough detected via CSS:', textDec, textDecLine);
       return true;
     }
     current = current.parentElement;
   }
+  return false;
+}
+
+/**
+ * Checks if an element has muted/secondary styling (often used for old prices)
+ * @param element - DOM element to check
+ * @returns true if element appears to be secondary/muted
+ */
+function isSecondaryPrice(element: Element): boolean {
+  const style = window.getComputedStyle(element);
+  const color = style.color;
+
+  // Parse RGB values
+  const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+  if (rgbMatch) {
+    const r = parseInt(rgbMatch[1], 10);
+    const g = parseInt(rgbMatch[2], 10);
+    const b = parseInt(rgbMatch[3], 10);
+
+    // Check if it's a grayish or muted color (not pure black)
+    // Pure black would be rgb(0,0,0), secondary prices are often gray or colored
+    const isGray = Math.abs(r - g) < 30 && Math.abs(g - b) < 30 && r > 80;
+    const isGreenish = g > r && g > b; // Carla uses green for old prices
+
+    if (isGray || isGreenish) {
+      console.log('[Bilkostnadskalkyl] Secondary price color detected:', color);
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -132,11 +166,10 @@ function hasStrikethrough(element: Element): boolean {
 function extractPrice(): number | null {
   console.log('[Bilkostnadskalkyl] Extracting price...');
 
-  // Strategy 1: Find price elements in DOM, excluding strikethrough prices
-  // This is more reliable than text matching as it respects visual hierarchy
+  // Strategy 1: Find price elements in DOM, excluding old/strikethrough prices
   const pricePattern = /^(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr$/;
   const allElements = document.querySelectorAll('*');
-  const foundPrices: { price: number; isStrikethrough: boolean }[] = [];
+  const foundPrices: { price: number; isOldPrice: boolean; element: Element }[] = [];
 
   for (const el of allElements) {
     // Only check leaf-ish nodes with direct text content
@@ -147,40 +180,57 @@ function extractPrice(): number | null {
         const price = parseInt(priceStr, 10);
         if (price > 100000 && price < 5000000) {
           const isStrikethrough = hasStrikethrough(el);
-          console.log('[Bilkostnadskalkyl] Found price element:', price, 'strikethrough:', isStrikethrough);
-          foundPrices.push({ price, isStrikethrough });
+          const isSecondary = isSecondaryPrice(el);
+          const isOldPrice = isStrikethrough || isSecondary;
+          console.log('[Bilkostnadskalkyl] Found price:', price,
+            '| strikethrough:', isStrikethrough,
+            '| secondary:', isSecondary,
+            '| isOldPrice:', isOldPrice);
+          foundPrices.push({ price, isOldPrice, element: el });
         }
       }
     }
   }
 
-  // Prefer non-strikethrough prices
-  const activePrices = foundPrices.filter(p => !p.isStrikethrough);
+  // Prefer non-old prices (current/active prices)
+  const activePrices = foundPrices.filter(p => !p.isOldPrice);
   if (activePrices.length > 0) {
-    // Return the first (usually main) non-strikethrough price
     console.log('[Bilkostnadskalkyl] Selected active price:', activePrices[0].price);
     return activePrices[0].price;
   }
 
-  // Fallback: if all prices are strikethrough, use first one anyway
+  // If we found prices but all seem like old prices, pick the lowest one
+  // (the new/sale price is usually lower than the old price)
+  if (foundPrices.length > 1) {
+    const sortedByPrice = [...foundPrices].sort((a, b) => a.price - b.price);
+    console.log('[Bilkostnadskalkyl] All prices appear old, selecting lowest:', sortedByPrice[0].price);
+    return sortedByPrice[0].price;
+  }
+
+  // Fallback: if only one price found, use it
   if (foundPrices.length > 0) {
-    console.log('[Bilkostnadskalkyl] Using strikethrough price as fallback:', foundPrices[0].price);
+    console.log('[Bilkostnadskalkyl] Using only available price:', foundPrices[0].price);
     return foundPrices[0].price;
   }
 
-  // Strategy 2: Text-based fallback (original approach)
+  // Strategy 2: Text-based fallback - find all prices and pick the lowest in reasonable range
   const allText = document.body.innerText;
   const matches = allText.match(/(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr/g) || [];
-
-  console.log('[Bilkostnadskalkyl] Text fallback - found matches:', matches);
+  const textPrices: number[] = [];
 
   for (const match of matches) {
     const priceStr = match.replace(/[^\d]/g, '');
     const price = parseInt(priceStr, 10);
     if (price > 100000 && price < 5000000) {
-      console.log('[Bilkostnadskalkyl] Selected price (text fallback):', price);
-      return price;
+      textPrices.push(price);
     }
+  }
+
+  if (textPrices.length > 0) {
+    // Pick the lowest price (likely the sale/current price)
+    const lowestPrice = Math.min(...textPrices);
+    console.log('[Bilkostnadskalkyl] Text fallback - selected lowest price:', lowestPrice);
+    return lowestPrice;
   }
 
   console.warn('[Bilkostnadskalkyl] Could not find price');
