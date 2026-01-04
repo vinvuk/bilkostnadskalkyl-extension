@@ -195,8 +195,11 @@ function extractPrice(): number | null {
   // Prefer non-old prices (current/active prices)
   const activePrices = foundPrices.filter(p => !p.isOldPrice);
   if (activePrices.length > 0) {
-    console.log('[Bilkostnadskalkyl] Selected active price:', activePrices[0].price);
-    return activePrices[0].price;
+    // If multiple active prices, prefer the lowest (sale price is always lower)
+    const sortedActive = [...activePrices].sort((a, b) => a.price - b.price);
+    console.log('[Bilkostnadskalkyl] Active prices found:', activePrices.map(p => p.price));
+    console.log('[Bilkostnadskalkyl] Selected lowest active price:', sortedActive[0].price);
+    return sortedActive[0].price;
   }
 
   // If we found prices but all seem like old prices, pick the lowest one
