@@ -192,18 +192,30 @@ function extractPrice(): number | null {
     }
   }
 
-  // Prefer non-old prices (current/active prices)
+  // Check if there are any old/strikethrough prices (indicates a sale)
+  const oldPrices = foundPrices.filter(p => p.isOldPrice);
   const activePrices = foundPrices.filter(p => !p.isOldPrice);
+  const hasSale = oldPrices.length > 0;
+
+  console.log('[Bilkostnadskalkyl] Old prices:', oldPrices.map(p => p.price));
+  console.log('[Bilkostnadskalkyl] Active prices:', activePrices.map(p => p.price));
+  console.log('[Bilkostnadskalkyl] Has sale:', hasSale);
+
   if (activePrices.length > 0) {
-    // If multiple active prices, prefer the lowest (sale price is always lower)
-    const sortedActive = [...activePrices].sort((a, b) => a.price - b.price);
-    console.log('[Bilkostnadskalkyl] Active prices found:', activePrices.map(p => p.price));
-    console.log('[Bilkostnadskalkyl] Selected lowest active price:', sortedActive[0].price);
-    return sortedActive[0].price;
+    if (hasSale) {
+      // SALE SCENARIO: Select the LOWEST active price (sale price < original)
+      const sortedActive = [...activePrices].sort((a, b) => a.price - b.price);
+      console.log('[Bilkostnadskalkyl] Sale detected - selecting lowest active:', sortedActive[0].price);
+      return sortedActive[0].price;
+    } else {
+      // NO SALE SCENARIO: Select the HIGHEST price (car price is largest on page)
+      const sortedActive = [...activePrices].sort((a, b) => b.price - a.price);
+      console.log('[Bilkostnadskalkyl] No sale - selecting highest active:', sortedActive[0].price);
+      return sortedActive[0].price;
+    }
   }
 
   // If we found prices but all seem like old prices, pick the lowest one
-  // (the new/sale price is usually lower than the old price)
   if (foundPrices.length > 1) {
     const sortedByPrice = [...foundPrices].sort((a, b) => a.price - b.price);
     console.log('[Bilkostnadskalkyl] All prices appear old, selecting lowest:', sortedByPrice[0].price);
@@ -216,7 +228,7 @@ function extractPrice(): number | null {
     return foundPrices[0].price;
   }
 
-  // Strategy 2: Text-based fallback - find all prices and pick the lowest in reasonable range
+  // Strategy 2: Text-based fallback - find the highest price in car range
   const allText = document.body.innerText;
   const matches = allText.match(/(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr/g) || [];
   const textPrices: number[] = [];
@@ -230,10 +242,10 @@ function extractPrice(): number | null {
   }
 
   if (textPrices.length > 0) {
-    // Pick the lowest price (likely the sale/current price)
-    const lowestPrice = Math.min(...textPrices);
-    console.log('[Bilkostnadskalkyl] Text fallback - selected lowest price:', lowestPrice);
-    return lowestPrice;
+    // Pick the highest price (car price is usually the largest)
+    const highestPrice = Math.max(...textPrices);
+    console.log('[Bilkostnadskalkyl] Text fallback - selected highest price:', highestPrice);
+    return highestPrice;
   }
 
   console.warn('[Bilkostnadskalkyl] Could not find price');
