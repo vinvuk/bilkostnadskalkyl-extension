@@ -5,6 +5,7 @@
 
 import { CostBreakdown, VehicleData, UserPreferences } from '../types';
 import { calculateCosts, createCalculatorInput } from '../core/calculator';
+import { isExtensionContextValid } from '../storage/preferences';
 
 type ViewState = 'collapsed' | 'expanded' | 'methodology';
 
@@ -2436,7 +2437,13 @@ export class CostOverlay {
     this.isSelfUpdate = true;
 
     // Save to chrome.storage (async, for persistence)
-    chrome.storage.sync.set({ bilkostnadskalkyl_preferences: fullPrefs });
+    if (isExtensionContextValid()) {
+      try {
+        chrome.storage.sync.set({ bilkostnadskalkyl_preferences: fullPrefs });
+      } catch {
+        // Extension context invalidated, ignore silently
+      }
+    }
   }
 
   /**
@@ -2520,11 +2527,23 @@ export class CostOverlay {
    * Saves the expanded state preference
    */
   private saveExpandedPreference(expanded: boolean): void {
-    chrome.storage.sync.get('bilkostnadskalkyl_preferences', (result) => {
-      const prefs = result.bilkostnadskalkyl_preferences || {};
-      prefs.overlayExpanded = expanded;
-      chrome.storage.sync.set({ bilkostnadskalkyl_preferences: prefs });
-    });
+    if (!isExtensionContextValid()) return;
+
+    try {
+      chrome.storage.sync.get('bilkostnadskalkyl_preferences', (result) => {
+        if (!isExtensionContextValid()) return;
+
+        try {
+          const prefs = result.bilkostnadskalkyl_preferences || {};
+          prefs.overlayExpanded = expanded;
+          chrome.storage.sync.set({ bilkostnadskalkyl_preferences: prefs });
+        } catch {
+          // Extension context invalidated, ignore silently
+        }
+      });
+    } catch {
+      // Extension context invalidated, ignore silently
+    }
   }
 
   /**
@@ -2640,12 +2659,22 @@ export class CostOverlay {
    */
   private async loadPosition(): Promise<void> {
     return new Promise((resolve) => {
-      chrome.storage.sync.get('bilkostnadskalkyl_position', (result) => {
-        if (result.bilkostnadskalkyl_position) {
-          this.position = result.bilkostnadskalkyl_position;
-        }
+      if (!isExtensionContextValid()) {
         resolve();
-      });
+        return;
+      }
+
+      try {
+        chrome.storage.sync.get('bilkostnadskalkyl_position', (result) => {
+          if (result.bilkostnadskalkyl_position) {
+            this.position = result.bilkostnadskalkyl_position;
+          }
+          resolve();
+        });
+      } catch {
+        // Extension context invalidated, resolve without position
+        resolve();
+      }
     });
   }
 
@@ -2653,8 +2682,12 @@ export class CostOverlay {
    * Saves current position to chrome.storage
    */
   private savePosition(): void {
-    if (this.position) {
-      chrome.storage.sync.set({ bilkostnadskalkyl_position: this.position });
+    if (this.position && isExtensionContextValid()) {
+      try {
+        chrome.storage.sync.set({ bilkostnadskalkyl_position: this.position });
+      } catch {
+        // Extension context invalidated, ignore silently
+      }
     }
   }
 
@@ -2784,7 +2817,14 @@ export class CostOverlay {
     this.container.style.top = '';
     this.container.style.left = '';
     this.container.style.right = '';
-    chrome.storage.sync.remove('bilkostnadskalkyl_position');
+
+    if (isExtensionContextValid()) {
+      try {
+        chrome.storage.sync.remove('bilkostnadskalkyl_position');
+      } catch {
+        // Extension context invalidated, ignore silently
+      }
+    }
   }
 
   /**

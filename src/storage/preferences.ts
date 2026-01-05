@@ -52,16 +52,41 @@ export async function resetPreferences(): Promise<void> {
 }
 
 /**
+ * Checks if the Chrome extension context is still valid
+ * @returns true if the extension context is valid
+ */
+export function isExtensionContextValid(): boolean {
+  try {
+    // Accessing chrome.runtime.id throws if context is invalidated
+    return typeof chrome !== 'undefined' &&
+           typeof chrome.runtime !== 'undefined' &&
+           !!chrome.runtime.id;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Listens for preference changes
  * @param callback - Function called when preferences change
  */
 export function onPreferencesChange(
   callback: (newPrefs: UserPreferences) => void
 ): void {
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'sync' && changes[STORAGE_KEY]) {
-      const newPrefs = { ...DEFAULT_PREFERENCES, ...changes[STORAGE_KEY].newValue };
-      callback(newPrefs);
-    }
-  });
+  try {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      // Check if extension context is still valid before processing
+      if (!isExtensionContextValid()) {
+        return;
+      }
+
+      if (areaName === 'sync' && changes[STORAGE_KEY]) {
+        const newPrefs = { ...DEFAULT_PREFERENCES, ...changes[STORAGE_KEY].newValue };
+        callback(newPrefs);
+      }
+    });
+  } catch (error) {
+    // Extension context may already be invalidated when setting up listener
+    console.warn('[Bilkostnadskalkyl] Could not set up preferences listener:', error);
+  }
 }
