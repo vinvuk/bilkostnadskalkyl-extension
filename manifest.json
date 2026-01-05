@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilkostnadskalkyl",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Se total agandekostnad direkt pa bilannonserna",
   "icons": {
     "16": "assets/icons/icon16.png",
@@ -14,7 +14,9 @@
   ],
   "host_permissions": [
     "https://www.carla.se/*",
-    "https://carla.se/*"
+    "https://carla.se/*",
+    "https://www.wayke.se/*",
+    "https://wayke.se/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -28,7 +30,9 @@
     {
       "matches": [
         "https://www.carla.se/*",
-        "https://carla.se/*"
+        "https://carla.se/*",
+        "https://www.wayke.se/*",
+        "https://wayke.se/*"
       ],
       "js": ["content/index.js"],
       "run_at": "document_start"
@@ -37,7 +41,10 @@
   "web_accessible_resources": [
     {
       "resources": ["overlay/overlay.css", "assets/*"],
-      "matches": ["https://*.carla.se/*"]
+      "matches": [
+        "https://*.carla.se/*",
+        "https://*.wayke.se/*"
+      ]
     }
   ]
 }
