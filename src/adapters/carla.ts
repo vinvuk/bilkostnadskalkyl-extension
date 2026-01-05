@@ -420,10 +420,34 @@ function extractSpecs(): {
   }
 
   // Extract effective interest rate (effektiv ränta) for loan calculations
-  // Carla shows this in the financing section, e.g., "Effektiv ränta 5.55%"
-  const effectiveRateMatch = pageText.match(/effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i);
-  if (effectiveRateMatch) {
-    specs.effectiveInterestRate = parseFloat(effectiveRateMatch[1].replace(',', '.'));
+  // Carla may show this in various formats in the financing section
+  // Use original text (not lowercased) for matching to preserve special characters
+  const originalText = document.body.innerText;
+
+  // Try multiple patterns for effective interest rate
+  const effectiveRatePatterns = [
+    // "Effektiv ränta: 5.55%" or "Effektiv ränta 5,55 %"
+    /effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i,
+    // "Eff. ränta: 5.55%"
+    /eff\.?\s*ränta[:\s]*([\d,\.]+)\s*%/i,
+    // "Effektiv ränta" on one line, number on next (with newline)
+    /effektiv\s*ränta[\s\n]*([\d,\.]+)\s*%/i,
+    // Just "ränta" followed by percentage in loan context
+    /(?:billån|finansiering|lån)[\s\S]{0,100}ränta[:\s]*([\d,\.]+)\s*%/i,
+    // Pattern with non-breaking spaces
+    /effektiv[\s\u00a0]*ränta[\s\u00a0:\-]*([\d,\.]+)[\s\u00a0]*%/i,
+  ];
+
+  for (const pattern of effectiveRatePatterns) {
+    const match = originalText.match(pattern);
+    if (match) {
+      const rate = parseFloat(match[1].replace(',', '.'));
+      // Sanity check: interest rates typically between 0.1% and 30%
+      if (rate > 0.1 && rate < 30) {
+        specs.effectiveInterestRate = rate;
+        break;
+      }
+    }
   }
 
   // Extract brand and model from URL or title

@@ -236,14 +236,30 @@ function extractSpecs(): {
   }
 
   // Extract effective interest rate from financing section
-  // Wayke format: "Effektiv ränta" followed by "7.18 %" or "7,18 %"
-  const effectiveRateMatch = document.body.innerText.match(
-    /effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i
-  );
-  if (effectiveRateMatch) {
-    const rate = parseFloat(effectiveRateMatch[1].replace(',', '.'));
-    if (rate > 0 && rate < 50) { // Sanity check: reasonable interest rate
-      specs.effectiveInterestRate = rate;
+  // Wayke may show this in various formats
+  const originalText = document.body.innerText;
+
+  // Try multiple patterns for effective interest rate
+  const effectiveRatePatterns = [
+    // "Effektiv ränta: 7.18%" or "Effektiv ränta 7,18 %"
+    /effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i,
+    // "Eff. ränta: 7.18%"
+    /eff\.?\s*ränta[:\s]*([\d,\.]+)\s*%/i,
+    // "Effektiv ränta" on one line, number on next
+    /effektiv\s*ränta[\s\n]*([\d,\.]+)\s*%/i,
+    // Pattern with non-breaking spaces
+    /effektiv[\s\u00a0]*ränta[\s\u00a0:\-]*([\d,\.]+)[\s\u00a0]*%/i,
+  ];
+
+  for (const pattern of effectiveRatePatterns) {
+    const match = originalText.match(pattern);
+    if (match) {
+      const rate = parseFloat(match[1].replace(',', '.'));
+      // Sanity check: interest rates typically between 0.1% and 30%
+      if (rate > 0.1 && rate < 30) {
+        specs.effectiveInterestRate = rate;
+        break;
+      }
     }
   }
 
