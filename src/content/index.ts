@@ -5,6 +5,7 @@
 
 import { isCarlaListingPage, extractCarlaData, getOverlayAnchor as getCarlaAnchor } from '../adapters/carla';
 import { isWaykeListingPage, extractWaykeData, getWaykeOverlayAnchor } from '../adapters/wayke';
+import { isBlocketListingPage, extractBlocketData, getBlocketOverlayAnchor } from '../adapters/blocket';
 import { loadPreferences, onPreferencesChange } from '../storage/preferences';
 import { calculateCosts, createCalculatorInput } from '../core/calculator';
 import { CostOverlay } from '../overlay/overlay';
@@ -36,6 +37,12 @@ const siteAdapters: SiteAdapter[] = [
     isListingPage: isWaykeListingPage,
     extractData: extractWaykeData,
     getAnchor: getWaykeOverlayAnchor,
+  },
+  {
+    name: 'Blocket.se',
+    isListingPage: isBlocketListingPage,
+    extractData: extractBlocketData,
+    getAnchor: getBlocketOverlayAnchor,
   },
 ];
 
