@@ -21,11 +21,8 @@ export function isCarlaListingPage(): boolean {
  */
 export async function extractCarlaData(): Promise<VehicleData | null> {
   try {
-    console.log('[Bilkostnadskalkyl] Starting data extraction...');
-
     // Wait for dynamic content to load
     await waitForContent();
-    console.log('[Bilkostnadskalkyl] Content loaded, extracting data...');
 
     // Extract price
     const purchasePrice = extractPrice();
@@ -36,7 +33,6 @@ export async function extractCarlaData(): Promise<VehicleData | null> {
 
     // Extract specs from page
     const specs = extractSpecs();
-    console.log('[Bilkostnadskalkyl] Extracted specs:', specs);
     const fuelType = specs.fuelType || 'bensin';
 
     // Determine if values are estimated
@@ -66,6 +62,7 @@ export async function extractCarlaData(): Promise<VehicleData | null> {
       co2Emissions: specs.co2,
       vehicleType,
       vehicleName,
+      effectiveInterestRate: specs.effectiveInterestRate,
       isEstimated,
     };
   } catch (error) {
@@ -114,7 +111,6 @@ function hasStrikethrough(element: Element): boolean {
     // Check for strikethrough tags
     const tagName = current.tagName.toLowerCase();
     if (tagName === 's' || tagName === 'strike' || tagName === 'del') {
-      console.log('[Bilkostnadskalkyl] Strikethrough detected via tag:', tagName);
       return true;
     }
     // Check for strikethrough CSS (both old and new property names)
@@ -122,11 +118,54 @@ function hasStrikethrough(element: Element): boolean {
     const textDec = style.textDecoration || '';
     const textDecLine = style.textDecorationLine || '';
     if (textDec.includes('line-through') || textDecLine.includes('line-through')) {
-      console.log('[Bilkostnadskalkyl] Strikethrough detected via CSS:', textDec, textDecLine);
       return true;
     }
     current = current.parentElement;
   }
+  return false;
+}
+
+/**
+ * Checks if an element is inside a financing/loan calculator context
+ * These prices (residual value, down payment, etc.) should be excluded
+ * @param element - DOM element to check
+ * @returns true if element is in a financing context
+ */
+function isFinancingContext(element: Element): boolean {
+  // Check for financing-related keywords in nearby text
+  const financingKeywords = [
+    'restvärde', 'kontantinsats', 'lånetid', 'billån', 'finansiering',
+    'månadskostnad', 'att betala per månad', 'privatleasing', 'leasing',
+    'ränta', 'amortering', 'lånekalkyl'
+  ];
+
+  // Check parent elements up to 5 levels for financing context
+  let current: Element | null = element;
+  let levels = 0;
+  while (current && levels < 5) {
+    const text = current.textContent?.toLowerCase() || '';
+
+    // If parent contains multiple financing keywords, it's likely a loan calculator
+    const matchCount = financingKeywords.filter(kw => text.includes(kw)).length;
+    if (matchCount >= 2) {
+      return true;
+    }
+
+    // Check for modal/dialog containers
+    const tagName = current.tagName.toLowerCase();
+    const role = current.getAttribute('role');
+    const className = current.className?.toLowerCase() || '';
+
+    if (role === 'dialog' || role === 'modal' ||
+        className.includes('modal') || className.includes('dialog') ||
+        className.includes('popup') || className.includes('overlay')) {
+      return true;
+    }
+
+    current = current.parentElement;
+    levels++;
+  }
+
   return false;
 }
 
@@ -152,7 +191,6 @@ function isSecondaryPrice(element: Element): boolean {
     const isGreenish = g > r && g > b; // Carla uses green for old prices
 
     if (isGray || isGreenish) {
-      console.log('[Bilkostnadskalkyl] Secondary price color detected:', color);
       return true;
     }
   }
@@ -161,15 +199,24 @@ function isSecondaryPrice(element: Element): boolean {
 }
 
 /**
+ * Gets the font size of an element in pixels
+ * @param element - DOM element to check
+ * @returns font size in pixels
+ */
+function getFontSize(element: Element): number {
+  const style = window.getComputedStyle(element);
+  return parseFloat(style.fontSize) || 16;
+}
+
+/**
  * Extracts price from page, avoiding strikethrough (old) prices
+ * Prioritizes prices displayed in larger fonts (main price is visually prominent)
  */
 function extractPrice(): number | null {
-  console.log('[Bilkostnadskalkyl] Extracting price...');
-
-  // Strategy 1: Find price elements in DOM, excluding old/strikethrough prices
+  // Strategy 1: Find price elements in DOM, tracking font size for prominence
   const pricePattern = /^(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr$/;
   const allElements = document.querySelectorAll('*');
-  const foundPrices: { price: number; isOldPrice: boolean; element: Element }[] = [];
+  const foundPrices: { price: number; isOldPrice: boolean; element: Element; fontSize: number }[] = [];
 
   for (const el of allElements) {
     // Only check leaf-ish nodes with direct text content
@@ -179,14 +226,17 @@ function extractPrice(): number | null {
         const priceStr = text.replace(/[^\d]/g, '');
         const price = parseInt(priceStr, 10);
         if (price > 100000 && price < 5000000) {
+          // Skip prices in financing/loan calculator contexts
+          const isFinancing = isFinancingContext(el);
+          if (isFinancing) {
+            continue;
+          }
+
           const isStrikethrough = hasStrikethrough(el);
           const isSecondary = isSecondaryPrice(el);
           const isOldPrice = isStrikethrough || isSecondary;
-          console.log('[Bilkostnadskalkyl] Found price:', price,
-            '| strikethrough:', isStrikethrough,
-            '| secondary:', isSecondary,
-            '| isOldPrice:', isOldPrice);
-          foundPrices.push({ price, isOldPrice, element: el });
+          const fontSize = getFontSize(el);
+          foundPrices.push({ price, isOldPrice, element: el, fontSize });
         }
       }
     }
@@ -197,34 +247,46 @@ function extractPrice(): number | null {
   const activePrices = foundPrices.filter(p => !p.isOldPrice);
   const hasSale = oldPrices.length > 0;
 
-  console.log('[Bilkostnadskalkyl] Old prices:', oldPrices.map(p => p.price));
-  console.log('[Bilkostnadskalkyl] Active prices:', activePrices.map(p => p.price));
-  console.log('[Bilkostnadskalkyl] Has sale:', hasSale);
-
   if (activePrices.length > 0) {
-    if (hasSale) {
-      // SALE SCENARIO: Select the LOWEST active price (sale price < original)
-      const sortedActive = [...activePrices].sort((a, b) => a.price - b.price);
-      console.log('[Bilkostnadskalkyl] Sale detected - selecting lowest active:', sortedActive[0].price);
-      return sortedActive[0].price;
+    // Find the largest font size among active prices (main price is usually biggest)
+    const maxFontSize = Math.max(...activePrices.map(p => p.fontSize));
+    // Consider prices "prominent" if within 4px of the largest font
+    const prominentPrices = activePrices.filter(p => p.fontSize >= maxFontSize - 4);
+
+    if (hasSale && prominentPrices.length > 0) {
+      // SALE SCENARIO: Among prominent prices, select the one closest to (but less than) the old price
+      // This handles the case where sale price and original price are displayed together prominently
+      const oldPriceValue = oldPrices[0].price;
+      const prominentBelowOld = prominentPrices.filter(p => p.price < oldPriceValue);
+
+      if (prominentBelowOld.length > 0) {
+        // Select the highest prominent price that's below the old price (closest to original)
+        const sortedBelowOld = [...prominentBelowOld].sort((a, b) => b.price - a.price);
+        return sortedBelowOld[0].price;
+      }
+
+      // Fallback: just pick highest prominent
+      const sortedProminent = [...prominentPrices].sort((a, b) => b.price - a.price);
+      return sortedProminent[0].price;
+    } else if (prominentPrices.length > 0) {
+      // NO SALE SCENARIO: Select the highest prominent price
+      const sortedProminent = [...prominentPrices].sort((a, b) => b.price - a.price);
+      return sortedProminent[0].price;
     } else {
-      // NO SALE SCENARIO: Select the HIGHEST price (car price is largest on page)
+      // Fallback to highest active price
       const sortedActive = [...activePrices].sort((a, b) => b.price - a.price);
-      console.log('[Bilkostnadskalkyl] No sale - selecting highest active:', sortedActive[0].price);
       return sortedActive[0].price;
     }
   }
 
-  // If we found prices but all seem like old prices, pick the lowest one
+  // If we found prices but all seem like old prices, pick the one with largest font
   if (foundPrices.length > 1) {
-    const sortedByPrice = [...foundPrices].sort((a, b) => a.price - b.price);
-    console.log('[Bilkostnadskalkyl] All prices appear old, selecting lowest:', sortedByPrice[0].price);
-    return sortedByPrice[0].price;
+    const sortedByFontSize = [...foundPrices].sort((a, b) => b.fontSize - a.fontSize);
+    return sortedByFontSize[0].price;
   }
 
   // Fallback: if only one price found, use it
   if (foundPrices.length > 0) {
-    console.log('[Bilkostnadskalkyl] Using only available price:', foundPrices[0].price);
     return foundPrices[0].price;
   }
 
@@ -244,7 +306,6 @@ function extractPrice(): number | null {
   if (textPrices.length > 0) {
     // Pick the highest price (car price is usually the largest)
     const highestPrice = Math.max(...textPrices);
-    console.log('[Bilkostnadskalkyl] Text fallback - selected highest price:', highestPrice);
     return highestPrice;
   }
 
@@ -264,6 +325,7 @@ function extractSpecs(): {
   co2: number | null;
   model: string | null;
   brand: string | null;
+  effectiveInterestRate: number | null;
 } {
   const specs = {
     fuelType: null as string | null,
@@ -274,6 +336,7 @@ function extractSpecs(): {
     co2: null as number | null,
     model: null as string | null,
     brand: null as string | null,
+    effectiveInterestRate: null as number | null,
   };
 
   const pageText = document.body.innerText.toLowerCase();
@@ -296,7 +359,6 @@ function extractSpecs(): {
     } else if (fuelText === 'bensin') {
       specs.fuelType = 'bensin';
     }
-    console.log('[Bilkostnadskalkyl] Fuel type from subtitle:', specs.fuelType);
   }
 
   // Fallback to general pattern matching if not found in subtitle
@@ -316,7 +378,6 @@ function extractSpecs(): {
     for (const { pattern, type } of fuelPatterns) {
       if (pattern.test(pageText)) {
         specs.fuelType = type;
-        console.log('[Bilkostnadskalkyl] Fuel type from fallback:', type);
         break;
       }
     }
@@ -335,7 +396,6 @@ function extractSpecs(): {
   if (mileageMatch) {
     const mileageStr = mileageMatch[1].replace(/\s/g, '');
     const mileage = parseInt(mileageStr, 10);
-    console.log('[Bilkostnadskalkyl] Mileage match:', mileageMatch[1], '-> parsed:', mileage);
     if (mileage > 0 && mileage < 500000) {
       specs.mileage = mileage;
     }
@@ -357,6 +417,13 @@ function extractSpecs(): {
   const co2Match = pageText.match(/co2[:\s]*(\d+)\s*g/i);
   if (co2Match) {
     specs.co2 = parseInt(co2Match[1], 10);
+  }
+
+  // Extract effective interest rate (effektiv ränta) for loan calculations
+  // Carla shows this in the financing section, e.g., "Effektiv ränta 5.55%"
+  const effectiveRateMatch = pageText.match(/effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i);
+  if (effectiveRateMatch) {
+    specs.effectiveInterestRate = parseFloat(effectiveRateMatch[1].replace(',', '.'));
   }
 
   // Extract brand and model from URL or title
@@ -454,8 +521,6 @@ function buildVehicleName(
  * Prioritizes elements near the price section
  */
 export function getOverlayAnchor(): HTMLElement | null {
-  console.log('[Bilkostnadskalkyl] Finding anchor element...');
-
   // Strategy 1: Find elements containing price text (e.g., "311 900 kr")
   const allElements = document.querySelectorAll('*');
   for (const el of allElements) {
@@ -471,7 +536,6 @@ export function getOverlayAnchor(): HTMLElement | null {
           const rect = parent.getBoundingClientRect();
           // Look for a container that's reasonably sized
           if (rect.width > 200 && rect.height > 50 && rect.height < 500) {
-            console.log('[Bilkostnadskalkyl] Found price container anchor');
             return parent as HTMLElement;
           }
           parent = parent.parentElement;
@@ -479,7 +543,6 @@ export function getOverlayAnchor(): HTMLElement | null {
         }
         // If no good parent found, use the element's parent
         if (el.parentElement) {
-          console.log('[Bilkostnadskalkyl] Found price element anchor');
           return el.parentElement as HTMLElement;
         }
       }
@@ -497,7 +560,6 @@ export function getOverlayAnchor(): HTMLElement | null {
     try {
       const element = document.querySelector(selector);
       if (element && element.textContent?.includes('kr')) {
-        console.log('[Bilkostnadskalkyl] Found price selector anchor:', selector);
         // Return the parent to give more room for the overlay
         return (element.parentElement || element) as HTMLElement;
       }
@@ -509,7 +571,6 @@ export function getOverlayAnchor(): HTMLElement | null {
   // Strategy 3: Try to find the main title (h1) which contains the car name
   const h1 = document.querySelector('h1');
   if (h1) {
-    console.log('[Bilkostnadskalkyl] Found h1 anchor');
     return h1 as HTMLElement;
   }
 
@@ -518,7 +579,6 @@ export function getOverlayAnchor(): HTMLElement | null {
                   document.querySelector('[class*="sidebar" i]') ||
                   document.querySelector('[class*="right" i][class*="col" i]');
   if (sidebar) {
-    console.log('[Bilkostnadskalkyl] Found sidebar anchor');
     return sidebar as HTMLElement;
   }
 
@@ -530,15 +590,12 @@ export function getOverlayAnchor(): HTMLElement | null {
     // Try to find first significant section within main
     const firstSection = main.querySelector('section') || main.firstElementChild;
     if (firstSection) {
-      console.log('[Bilkostnadskalkyl] Found main section anchor');
       return firstSection as HTMLElement;
     }
-    console.log('[Bilkostnadskalkyl] Found main anchor');
     return main as HTMLElement;
   }
 
   // Fallback: Create a fixed position container at top-right
-  console.log('[Bilkostnadskalkyl] Using fallback: creating fixed container');
   let fixedContainer = document.getElementById('bkk-fixed-anchor');
   if (!fixedContainer) {
     fixedContainer = document.createElement('div');

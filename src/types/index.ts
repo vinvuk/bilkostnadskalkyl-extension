@@ -13,6 +13,7 @@ export interface VehicleData {
   co2Emissions: number | null;
   vehicleType: VehicleType;
   vehicleName: string | null;  // e.g. "Volvo XC40 2023"
+  effectiveInterestRate: number | null;  // Extracted from listing if available
   isEstimated: {
     fuelConsumption: boolean;
     vehicleType: boolean;
@@ -60,6 +61,7 @@ export interface UserPreferences {
   annualTax: number;
   hasMalusTax: boolean;
   malusTaxAmount: number;
+  annualTireCost?: number;  // Årlig däckkostnad (valfritt, beräknas annars)
   overlayExpanded: boolean;
 }
 
@@ -91,6 +93,7 @@ export interface CalculatorInput {
   annualTax: number;
   hasMalusTax: boolean;
   malusTaxAmount: number;
+  annualTireCost?: number;  // Override for calculated tire cost
 }
 
 /** Cost breakdown result */

@@ -200,6 +200,7 @@ const overlayStyles = `
   border: 1px solid var(--bkk-border);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
+  overflow: hidden;
 }
 
 @keyframes expandIn {
@@ -1284,8 +1285,7 @@ input:focus-visible {
 }
 
 .bkk-price-input.modified {
-  border-color: var(--bkk-accent);
-  background: rgba(16, 185, 129, 0.05);
+  border-color: var(--bkk-border-strong);
 }
 
 .bkk-price-unit {
@@ -1503,7 +1503,17 @@ export class CostOverlay {
   ) {
     this.vehicleData = vehicleData;
     this.costs = costs;
-    this.preferences = preferences;
+
+    // Use extracted effective interest rate from listing if available
+    if (vehicleData.effectiveInterestRate !== null && vehicleData.effectiveInterestRate > 0) {
+      this.preferences = {
+        ...preferences,
+        interestRate: vehicleData.effectiveInterestRate,
+      };
+    } else {
+      this.preferences = preferences;
+    }
+
     // Always start collapsed - less intrusive for the user
     this.viewState = 'collapsed';
 
@@ -1622,7 +1632,7 @@ export class CostOverlay {
 
     // Insurance summary for prices section
     const insuranceSummary = this.preferences.insurance > 0
-      ? `Försäkring ${this.formatNumber(this.preferences.insurance)} kr/år`
+      ? `Försäkring ${this.formatNumber(this.preferences.insurance)} kr/mån`
       : '';
 
     this.shadow.innerHTML = `
@@ -1737,10 +1747,10 @@ export class CostOverlay {
                       </div>
                     </div>
                     <div class="bkk-loan-field">
-                      <span class="bkk-loan-label">Ränta</span>
+                      <span class="bkk-loan-label">Eff. ränta</span>
                       <div class="bkk-loan-input-group">
-                        <input type="number" class="bkk-loan-input" id="bkk-interest-rate"
-                          value="${this.preferences.interestRate ?? 5.0}" min="0" max="30" step="0.1">
+                        <input type="text" inputmode="decimal" class="bkk-loan-input" id="bkk-interest-rate"
+                          value="${this.preferences.interestRate ?? 5.0}" pattern="[0-9]*[,.]?[0-9]*">
                         <span class="bkk-loan-unit">%</span>
                       </div>
                     </div>
@@ -1760,7 +1770,7 @@ export class CostOverlay {
                       <div class="bkk-loan-input-group">
                         <input type="number" class="bkk-loan-input" id="bkk-admin-fee"
                           value="${this.preferences.monthlyAdminFee ?? 60}" min="0" max="500" step="5">
-                        <span class="bkk-loan-unit">kr</span>
+                        <span class="bkk-loan-unit">kr/mån</span>
                       </div>
                     </div>
                   </div>
@@ -1823,16 +1833,16 @@ export class CostOverlay {
                   <div class="bkk-section-field">
                     <span class="bkk-section-field-label">Bensinpris</span>
                     <div class="bkk-section-field-input">
-                      <input type="number" class="bkk-section-input" id="bkk-fuel-price"
-                        value="${this.preferences.primaryFuelPrice}" min="1" max="50" step="0.1">
+                      <input type="text" inputmode="decimal" class="bkk-section-input" id="bkk-fuel-price"
+                        value="${this.preferences.primaryFuelPrice}" pattern="[0-9]*[,.]?[0-9]*">
                       <span class="bkk-section-unit">kr/l</span>
                     </div>
                   </div>
                   <div class="bkk-section-field">
                     <span class="bkk-section-field-label">Elpris</span>
                     <div class="bkk-section-field-input">
-                      <input type="number" class="bkk-section-input" id="bkk-el-price"
-                        value="${this.preferences.secondaryFuelPrice}" min="0.1" max="20" step="0.1">
+                      <input type="text" inputmode="decimal" class="bkk-section-input" id="bkk-el-price"
+                        value="${this.preferences.secondaryFuelPrice}" pattern="[0-9]*[,.]?[0-9]*">
                       <span class="bkk-section-unit">kr/kWh</span>
                     </div>
                   </div>
@@ -1848,8 +1858,8 @@ export class CostOverlay {
                   <div class="bkk-section-field">
                     <span class="bkk-section-field-label">${isElectric ? 'Elpris' : 'Bränslepris'}</span>
                     <div class="bkk-section-field-input">
-                      <input type="number" class="bkk-section-input" id="bkk-fuel-price"
-                        value="${fuelValue}" min="0.1" max="50" step="0.1">
+                      <input type="text" inputmode="decimal" class="bkk-section-input" id="bkk-fuel-price"
+                        value="${fuelValue}" pattern="[0-9]*[,.]?[0-9]*">
                       <span class="bkk-section-unit">${fuelUnit}</span>
                     </div>
                   </div>
@@ -1858,8 +1868,8 @@ export class CostOverlay {
                     <span class="bkk-section-field-label">Försäkring</span>
                     <div class="bkk-section-field-input">
                       <input type="number" class="bkk-section-input" id="bkk-insurance"
-                        value="${this.preferences.insurance}" min="0" max="50000" step="100">
-                      <span class="bkk-section-unit">kr/år</span>
+                        value="${this.preferences.insurance}" min="0" max="5000" step="50">
+                      <span class="bkk-section-unit">kr/mån</span>
                     </div>
                   </div>
                   <div class="bkk-section-field">
@@ -1891,7 +1901,15 @@ export class CostOverlay {
                     <span class="bkk-section-field-label">Parkering</span>
                     <div class="bkk-section-field-input">
                       <input type="number" class="bkk-section-input" id="bkk-parking"
-                        value="${this.preferences.parking}" min="0" max="50000" step="100">
+                        value="${this.preferences.parking}" min="0" max="5000" step="50">
+                      <span class="bkk-section-unit">kr/mån</span>
+                    </div>
+                  </div>
+                  <div class="bkk-section-field">
+                    <span class="bkk-section-field-label">Däck</span>
+                    <div class="bkk-section-field-input">
+                      <input type="number" class="bkk-section-input" id="bkk-tires"
+                        value="${this.preferences.annualTireCost ?? this.costs.tires}" min="0" max="30000" step="100">
                       <span class="bkk-section-unit">kr/år</span>
                     </div>
                   </div>
@@ -2045,6 +2063,10 @@ export class CostOverlay {
       input.addEventListener('click', (e) => e.stopPropagation());
       input.addEventListener('input', () => {
         this.debouncedSaveExpanded();
+      });
+      // Sanitize on blur to prevent leading zeros and enforce min values
+      input.addEventListener('blur', () => {
+        this.sanitizeNumericInput(input as HTMLInputElement);
       });
     });
 
@@ -2285,11 +2307,49 @@ export class CostOverlay {
 
   /**
    * Safely parses a float, returning fallback for NaN or null/undefined inputs
+   * Supports both comma and period as decimal separators (Swedish/international)
    */
   private safeParseFloat(value: string | undefined, fallback: number): number {
     if (value === undefined || value === null || value === '') return fallback;
-    const parsed = parseFloat(value);
+    // Replace comma with period to support Swedish decimal format
+    const normalized = value.replace(',', '.');
+    const parsed = parseFloat(normalized);
     return isNaN(parsed) ? fallback : parsed;
+  }
+
+  /**
+   * Sanitizes a numeric input field on blur:
+   * - Removes leading zeros (except for "0" itself)
+   * - Enforces minimum value from min attribute
+   * - Formats decimal values consistently
+   * @param input - The input element to sanitize
+   */
+  private sanitizeNumericInput(input: HTMLInputElement): void {
+    const value = input.value.trim();
+    if (value === '') return;
+
+    // Check if this is a decimal input (text input with decimal pattern)
+    const isDecimal = input.type === 'text' && input.inputMode === 'decimal';
+
+    if (isDecimal) {
+      // Handle decimal inputs (like interest rate)
+      const normalized = value.replace(',', '.');
+      const parsed = parseFloat(normalized);
+      if (!isNaN(parsed)) {
+        // Format with comma for Swedish locale
+        input.value = parsed.toString().replace('.', ',');
+      }
+    } else {
+      // Handle integer inputs
+      const parsed = parseInt(value, 10);
+      if (!isNaN(parsed)) {
+        // Get minimum value from attribute
+        const min = input.min ? parseInt(input.min, 10) : 0;
+        // Enforce minimum and remove leading zeros
+        const sanitized = Math.max(parsed, min);
+        input.value = sanitized.toString();
+      }
+    }
   }
 
   /**
@@ -2308,6 +2368,7 @@ export class CostOverlay {
     const insurance = this.shadow.querySelector('#bkk-insurance') as HTMLInputElement | null;
     const tax = this.shadow.querySelector('#bkk-tax') as HTMLInputElement | null;
     const parking = this.shadow.querySelector('#bkk-parking') as HTMLInputElement | null;
+    const tires = this.shadow.querySelector('#bkk-tires') as HTMLInputElement | null;
 
     // Financing fields
     const activeToggle = this.shadow.querySelector('#bkk-financing-toggle button.active') as HTMLElement | null;
@@ -2330,6 +2391,7 @@ export class CostOverlay {
       insurance: this.safeParseInt(insurance?.value, 0),
       annualTax: this.safeParseInt(tax?.value, 0),
       parking: this.safeParseInt(parking?.value, 0),
+      annualTireCost: tires?.value ? this.safeParseInt(tires.value, 0) : undefined,
       financingType,
       loanType,
       downPaymentPercent: this.safeParseInt(downPayment?.value, this.preferences.downPaymentPercent),
@@ -2537,7 +2599,7 @@ export class CostOverlay {
     const fuelValue = isElectric ? this.preferences.secondaryFuelPrice : this.preferences.primaryFuelPrice;
     const fuelUnit = isElectric ? 'kr/kWh' : 'kr/l';
     const insuranceSummary = this.preferences.insurance > 0
-      ? `Försäkring ${this.formatNumber(this.preferences.insurance)} kr/år`
+      ? `Försäkring ${this.formatNumber(this.preferences.insurance)} kr/mån`
       : '';
 
     const costsSummary = this.shadow.querySelector('[data-section="costs"] .bkk-section-summary');
@@ -2561,12 +2623,10 @@ export class CostOverlay {
       loanSummaryValue.textContent = `${this.formatNumber(this.costs.monthlyLoanPayment)} kr/mån`;
     }
 
-    // Update breakdown items
-    const breakdownContainer = this.shadow.querySelector('.bkk-breakdown');
-    if (breakdownContainer) {
-      const titleEl = breakdownContainer.querySelector('.bkk-breakdown-title');
-      const title = titleEl ? titleEl.outerHTML : '';
-      breakdownContainer.innerHTML = title + this.renderBreakdown();
+    // Update breakdown items (FÖRDELNING section)
+    const breakdownContent = this.shadow.querySelector('.bkk-section.bkk-breakdown-section .bkk-section-content');
+    if (breakdownContent) {
+      breakdownContent.innerHTML = this.renderBreakdown();
     }
   }
 

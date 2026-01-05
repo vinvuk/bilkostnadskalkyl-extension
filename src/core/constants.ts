@@ -77,8 +77,8 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   maintenanceLevel: 'normal',
   depreciationRate: 'normal',
   ownershipYears: 5,
-  insurance: 6000,
-  parking: 0,
+  insurance: 500,  // kr/mån (multipliceras med 12 i calculator)
+  parking: 0,      // kr/mån (multipliceras med 12 i calculator)
   financingType: 'cash',
   loanType: 'residual',  // Restvärdelån som standard (vanligast på bilsajter)
   loanAmount: 0,

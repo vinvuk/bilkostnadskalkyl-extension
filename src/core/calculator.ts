@@ -53,12 +53,18 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
   const annualMaintenance = baseMaintenance * mileageMultiplier;
 
   // Tires (replace based on km driven, typically every 60,000 km)
-  const tireReplacementYears = Math.max(2, Math.min(5, 60000 / mileageKm));
-  const annualTireCost = TIRE_COSTS[input.vehicleType] / tireReplacementYears;
+  // Use user-provided value if available, otherwise calculate
+  let annualTireCost: number;
+  if (input.annualTireCost !== undefined && input.annualTireCost > 0) {
+    annualTireCost = input.annualTireCost;
+  } else {
+    const tireReplacementYears = Math.max(2, Math.min(5, 60000 / mileageKm));
+    annualTireCost = TIRE_COSTS[input.vehicleType] / tireReplacementYears;
+  }
 
-  // Fixed costs
-  const annualInsurance = input.insurance;
-  const annualParking = input.parking;
+  // Fixed costs (insurance and parking are monthly values, multiply by 12)
+  const annualInsurance = input.insurance * 12;
+  const annualParking = input.parking * 12;
 
   // Financing cost calculation - supports both loan types
   let annualFinancing = 0;
@@ -97,6 +103,9 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
       monthlyLoanPayment += input.monthlyAdminFee;
     }
 
+    // Round monthly payment first, then calculate annual to ensure consistency
+    // (displayed monthly × 12 = displayed annual)
+    monthlyLoanPayment = Math.round(monthlyLoanPayment);
     annualFinancing = monthlyLoanPayment * 12;
   }
 
@@ -104,8 +113,8 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
   const variableCosts = annualFuelCost + annualMaintenance + annualTireCost;
   const fixedCosts = annualTax + annualInsurance + annualParking + annualFinancing + annualDepreciation;
   const totalAnnual = variableCosts + fixedCosts;
-  const costPerMil = totalAnnual / input.annualMileage;
-  const costPerKm = totalAnnual / mileageKm;
+  const costPerMil = input.annualMileage > 0 ? totalAnnual / input.annualMileage : 0;
+  const costPerKm = mileageKm > 0 ? totalAnnual / mileageKm : 0;
   const monthlyTotal = totalAnnual / 12;
 
   return {
@@ -116,8 +125,8 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
     tires: Math.round(annualTireCost),
     insurance: Math.round(annualInsurance),
     parking: Math.round(annualParking),
-    financing: Math.round(annualFinancing),
-    monthlyLoanPayment: Math.round(monthlyLoanPayment),
+    financing: annualFinancing, // Already calculated from rounded monthly
+    monthlyLoanPayment: monthlyLoanPayment, // Already rounded
     variableCosts: Math.round(variableCosts),
     fixedCosts: Math.round(fixedCosts),
     totalAnnual: Math.round(totalAnnual),
@@ -178,6 +187,7 @@ export function createCalculatorInput(vehicle: VehicleData, prefs: UserPreferenc
     annualTax,
     hasMalusTax: prefs.hasMalusTax ?? false,
     malusTaxAmount: prefs.malusTaxAmount ?? 0,
+    annualTireCost: prefs.annualTireCost,
   };
 }
 
