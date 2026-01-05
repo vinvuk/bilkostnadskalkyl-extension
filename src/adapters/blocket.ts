@@ -101,14 +101,56 @@ async function waitForContent(): Promise<void> {
 }
 
 /**
+ * Extracts structured data from Blocket's advertising-initial-state JSON
+ * This contains reliable vehicle data directly from Blocket's system
+ * @returns Parsed advertising data or null if not found
+ */
+function extractAdvertisingData(): Record<string, string[]> | null {
+  try {
+    const scriptEl = document.getElementById('advertising-initial-state');
+    if (!scriptEl?.textContent) {
+      return null;
+    }
+
+    const data = JSON.parse(scriptEl.textContent);
+    const targeting = data?.config?.adServer?.gam?.targeting;
+
+    if (!Array.isArray(targeting)) {
+      return null;
+    }
+
+    // Convert targeting array to key-value object
+    const result: Record<string, string[]> = {};
+    for (const item of targeting) {
+      if (item.key && Array.isArray(item.value)) {
+        result[item.key] = item.value;
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.warn('[Bilkostnadskalkyl] Failed to parse advertising data:', error);
+    return null;
+  }
+}
+
+/**
  * Extracts price from Blocket page
- * Blocket shows price prominently, usually as "XXX XXX kr"
+ * Strategy 1: Use structured JSON data from advertising-initial-state
+ * Strategy 2: Fallback to text pattern matching
  */
 function extractPrice(): number | null {
-  const pageText = document.body.innerText;
+  // Strategy 1: Use structured data (most reliable)
+  const adData = extractAdvertisingData();
+  if (adData?.price?.[0]) {
+    const price = parseInt(adData.price[0], 10);
+    if (price >= 30000 && price <= 5000000) {
+      return price;
+    }
+  }
 
-  // Strategy 1: Look for large price patterns in the page
-  // Blocket format: "359 900 kr"
+  // Strategy 2: Fallback to text pattern matching
+  const pageText = document.body.innerText;
   const pricePattern = /(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr/g;
   const matches: number[] = [];
 
@@ -131,7 +173,25 @@ function extractPrice(): number | null {
 }
 
 /**
+ * Maps Blocket's numeric fuel codes to fuel type strings
+ * Based on observed values in advertising-initial-state
+ */
+function mapBlocketFuelCode(code: string): string | null {
+  const fuelMap: Record<string, string> = {
+    '1': 'bensin',
+    '2': 'diesel',
+    '3': 'el',
+    '4': 'hybrid',
+    '5': 'laddhybrid',
+    '6': 'e85',
+    '7': 'biogas',
+  };
+  return fuelMap[code] || null;
+}
+
+/**
  * Extracts vehicle specifications from Blocket page
+ * Uses structured JSON data when available, with text fallback
  */
 function extractSpecs(): {
   fuelType: string | null;
@@ -154,29 +214,66 @@ function extractSpecs(): {
     brand: null as string | null,
   };
 
-  const pageText = document.body.innerText;
-  const pageTextLower = pageText.toLowerCase();
+  // Strategy 1: Use structured JSON data (most reliable)
+  const adData = extractAdvertisingData();
+  if (adData) {
+    // Extract year
+    if (adData.year?.[0]) {
+      const year = parseInt(adData.year[0], 10);
+      if (year >= 1990 && year <= 2030) {
+        specs.year = year;
+      }
+    }
 
-  // Extract year from "Modellår 2026" or similar patterns
-  const yearMatch = pageText.match(/Modellår\s*(\d{4})/i) ||
-    pageText.match(/(\d{4})\s*års\s*modell/i);
-  if (yearMatch) {
-    specs.year = parseInt(yearMatch[1], 10);
-  }
+    // Extract mileage
+    if (adData.mileage?.[0]) {
+      const mileage = parseInt(adData.mileage[0], 10);
+      if (mileage >= 0 && mileage < 1000000) {
+        specs.mileage = mileage;
+      }
+    }
 
-  // Extract mileage from "Miltal X mil" or "X mil"
-  // Blocket format: "Miltal\n0 mil" or "123 456 mil"
-  const mileageMatch = pageText.match(/Miltal\s*[\n\r]?\s*(\d[\d\s]*)\s*mil/i) ||
-    pageText.match(/(\d[\d\s]*)\s*mil(?!\w)/i);
-  if (mileageMatch) {
-    const mileageStr = mileageMatch[1].replace(/\s/g, '');
-    const mileage = parseInt(mileageStr, 10);
-    if (mileage >= 0 && mileage < 100000) {
-      specs.mileage = mileage;
+    // Extract fuel type from code
+    if (adData.fuel?.[0]) {
+      specs.fuelType = mapBlocketFuelCode(adData.fuel[0]);
+    }
+
+    // Extract brand and model
+    if (adData.make_text?.[0]) {
+      specs.brand = adData.make_text[0];
+    }
+    if (adData.model_text?.[0]) {
+      specs.model = adData.model_text[0];
     }
   }
 
-  // Extract fuel type from "Drivmedel" section or page text
+  // Strategy 2: Text-based fallback for missing values
+  const pageText = document.body.innerText;
+  const pageTextLower = pageText.toLowerCase();
+
+  // Extract year if not found in JSON
+  if (!specs.year) {
+    const yearMatch = pageText.match(/Modellår\s*(\d{4})/i) ||
+      pageText.match(/(\d{4})\s*års\s*modell/i);
+    if (yearMatch) {
+      specs.year = parseInt(yearMatch[1], 10);
+    }
+  }
+
+  // Extract mileage if not found in JSON
+  if (specs.mileage === null) {
+    const mileageMatch = pageText.match(/Miltal\s*[\n\r]?\s*(\d[\d\s]*)\s*mil/i) ||
+      pageText.match(/(\d[\d\s]*)\s*mil(?!\w)/i);
+    if (mileageMatch) {
+      const mileageStr = mileageMatch[1].replace(/\s/g, '');
+      const mileage = parseInt(mileageStr, 10);
+      if (mileage >= 0 && mileage < 100000) {
+        specs.mileage = mileage;
+      }
+    }
+  }
+
+  // Extract fuel type if not found in JSON
   const fuelPatterns = [
     { pattern: /\belbil\b|100%?\s*el\b|electric/i, type: 'el' },
     { pattern: /\bladdhybrid\b|plug-?in\s*hybrid|phev/i, type: 'laddhybrid' },
@@ -187,14 +284,16 @@ function extractSpecs(): {
     { pattern: /\bgas\b|\bbiogas\b|\bcng\b/i, type: 'biogas' },
   ];
 
-  // First check the Drivmedel field specifically
-  const drivmedelMatch = pageText.match(/Drivmedel\s*[\n\r]?\s*(\w+)/i);
-  if (drivmedelMatch) {
-    const drivmedel = drivmedelMatch[1].toLowerCase();
-    for (const { pattern, type } of fuelPatterns) {
-      if (pattern.test(drivmedel)) {
-        specs.fuelType = type;
-        break;
+  if (!specs.fuelType) {
+    // Check the Drivmedel field specifically
+    const drivmedelMatch = pageText.match(/Drivmedel\s*[\n\r]?\s*(\w+)/i);
+    if (drivmedelMatch) {
+      const drivmedel = drivmedelMatch[1].toLowerCase();
+      for (const { pattern, type } of fuelPatterns) {
+        if (pattern.test(drivmedel)) {
+          specs.fuelType = type;
+          break;
+        }
       }
     }
   }

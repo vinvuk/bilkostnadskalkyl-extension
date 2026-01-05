@@ -41,6 +41,7 @@ const overlayStyles = `
   top: 100px;
   right: 20px;
   z-index: 999999;
+  overflow: visible;
   /* Allow position override via inline styles */
 }
 
@@ -67,7 +68,7 @@ const overlayStyles = `
   background: var(--bkk-bg);
   color: var(--bkk-text);
   border-radius: 60px;
-  padding: 8px 8px 8px 10px;
+  padding: 8px 12px 8px 10px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   cursor: pointer;
   display: flex;
@@ -77,6 +78,7 @@ const overlayStyles = `
   border: 1px solid var(--bkk-border);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
+  overflow: visible;
 }
 
 .bkk-badge:hover {
@@ -115,10 +117,8 @@ const overlayStyles = `
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--bkk-text);
+  white-space: nowrap;
 }
 
 .bkk-badge-label {

@@ -250,31 +250,30 @@ function extractPrice(): number | null {
   if (activePrices.length > 0) {
     // Find the largest font size among active prices (main price is usually biggest)
     const maxFontSize = Math.max(...activePrices.map(p => p.fontSize));
-    // Consider prices "prominent" if within 4px of the largest font
-    const prominentPrices = activePrices.filter(p => p.fontSize >= maxFontSize - 4);
+    // Consider prices "prominent" if within 8px of the largest font (increased tolerance for consistency)
+    const prominentPrices = activePrices.filter(p => p.fontSize >= maxFontSize - 8);
 
-    if (hasSale && prominentPrices.length > 0) {
-      // SALE SCENARIO: Among prominent prices, select the one closest to (but less than) the old price
-      // This handles the case where sale price and original price are displayed together prominently
-      const oldPriceValue = oldPrices[0].price;
-      const prominentBelowOld = prominentPrices.filter(p => p.price < oldPriceValue);
+    // Sort by price ascending - we want the LOWEST price (sale price or actual price)
+    const sortedByPriceAsc = [...prominentPrices].sort((a, b) => a.price - b.price);
 
-      if (prominentBelowOld.length > 0) {
-        // Select the highest prominent price that's below the old price (closest to original)
-        const sortedBelowOld = [...prominentBelowOld].sort((a, b) => b.price - a.price);
-        return sortedBelowOld[0].price;
+    if (hasSale && sortedByPriceAsc.length > 0) {
+      // SALE SCENARIO: Select the lowest prominent price that's below the old price
+      const oldPriceValue = Math.max(...oldPrices.map(p => p.price));
+      const priceBelowOld = sortedByPriceAsc.filter(p => p.price < oldPriceValue);
+
+      if (priceBelowOld.length > 0) {
+        // Select the lowest price below the old price (the actual sale price)
+        return priceBelowOld[0].price;
       }
 
-      // Fallback: just pick highest prominent
-      const sortedProminent = [...prominentPrices].sort((a, b) => b.price - a.price);
-      return sortedProminent[0].price;
-    } else if (prominentPrices.length > 0) {
-      // NO SALE SCENARIO: Select the highest prominent price
-      const sortedProminent = [...prominentPrices].sort((a, b) => b.price - a.price);
-      return sortedProminent[0].price;
+      // Fallback: pick lowest prominent
+      return sortedByPriceAsc[0].price;
+    } else if (sortedByPriceAsc.length > 0) {
+      // NO SALE SCENARIO: Select the lowest prominent price (actual purchase price)
+      return sortedByPriceAsc[0].price;
     } else {
-      // Fallback to highest active price
-      const sortedActive = [...activePrices].sort((a, b) => b.price - a.price);
+      // Fallback to lowest active price
+      const sortedActive = [...activePrices].sort((a, b) => a.price - b.price);
       return sortedActive[0].price;
     }
   }
