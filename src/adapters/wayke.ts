@@ -263,6 +263,11 @@ function extractSpecs(): {
     }
   }
 
+  // Fallback: Use Wayke's typical effective rate if not found
+  if (specs.effectiveInterestRate === null) {
+    specs.effectiveInterestRate = 7.44;
+  }
+
   // Extract brand and model from URL or title
   // URL format: /objekt/{uuid}/volvo-xc60-t5-awd-...
   const path = window.location.pathname;
