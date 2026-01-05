@@ -72,31 +72,79 @@ export async function extractBlocketData(): Promise<VehicleData | null> {
 }
 
 /**
- * Waits for dynamic content to load
+ * Checks if the page has the structured advertising data we need
+ * @returns true if advertising-initial-state script exists with valid data
+ */
+function hasAdvertisingData(): boolean {
+  const scriptEl = document.getElementById('advertising-initial-state');
+  if (!scriptEl?.textContent) {
+    return false;
+  }
+  try {
+    const data = JSON.parse(scriptEl.textContent);
+    return Array.isArray(data?.config?.adServer?.gam?.targeting);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Waits for dynamic content to load on Blocket
+ * Prioritizes waiting for structured JSON data, with text fallback
  */
 async function waitForContent(): Promise<void> {
   return new Promise((resolve) => {
-    // Check if price is already visible
-    if (document.body.innerText.includes(' kr')) {
-      resolve();
+    // Check if structured data is already available (preferred)
+    if (hasAdvertisingData()) {
+      // Small delay to ensure DOM is fully rendered
+      setTimeout(resolve, 100);
       return;
     }
 
-    // Wait for content with timeout
-    const observer = new MutationObserver(() => {
-      if (document.body.innerText.includes(' kr')) {
+    // Check if price text is visible (fallback indicator)
+    if (document.body.innerText.includes(' kr')) {
+      // Small delay to allow JSON to load
+      setTimeout(resolve, 300);
+      return;
+    }
+
+    let resolved = false;
+    const done = () => {
+      if (!resolved) {
+        resolved = true;
         observer.disconnect();
-        resolve();
+        // Small delay after detection to ensure full load
+        setTimeout(resolve, 200);
+      }
+    };
+
+    // Wait for content with MutationObserver
+    const observer = new MutationObserver(() => {
+      // Prefer structured data
+      if (hasAdvertisingData()) {
+        done();
+        return;
+      }
+      // Fallback to text detection
+      if (document.body.innerText.includes(' kr')) {
+        // Give JSON a bit more time to load after text appears
+        setTimeout(() => {
+          if (!resolved) {
+            done();
+          }
+        }, 500);
       }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // Timeout after 5 seconds
+    // Timeout after 10 seconds (increased from 5)
     setTimeout(() => {
-      observer.disconnect();
-      resolve();
-    }, 5000);
+      if (!resolved) {
+        console.warn('[Bilkostnadskalkyl] Blocket content load timeout');
+        done();
+      }
+    }, 10000);
   });
 }
 

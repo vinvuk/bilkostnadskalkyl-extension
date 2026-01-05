@@ -109,10 +109,11 @@ async function init(retryCount: number = 0): Promise<void> {
     // Extract vehicle data from page using the appropriate adapter
     const vehicleData = await adapter.extractData();
     if (!vehicleData) {
-      // Retry up to 3 times with increasing delays
-      if (retryCount < 3) {
+      // Retry up to 5 times with increasing delays (more aggressive for SPAs)
+      if (retryCount < 5) {
         initInProgress = false;
-        setTimeout(() => init(retryCount + 1), 800 * (retryCount + 1));
+        const delay = retryCount < 2 ? 500 : 1000 * (retryCount - 1);
+        setTimeout(() => init(retryCount + 1), delay);
         return;
       }
       console.warn(`[Bilkostnadskalkyl] Could not extract vehicle data from ${adapter.name} after retries`);
@@ -140,9 +141,10 @@ async function init(retryCount: number = 0): Promise<void> {
     // Find anchor and inject overlay using the appropriate adapter
     const anchor = adapter.getAnchor();
     if (!anchor) {
-      if (retryCount < 3) {
+      if (retryCount < 5) {
         initInProgress = false;
-        setTimeout(() => init(retryCount + 1), 800 * (retryCount + 1));
+        const delay = retryCount < 2 ? 500 : 1000 * (retryCount - 1);
+        setTimeout(() => init(retryCount + 1), delay);
         return;
       }
       console.warn(`[Bilkostnadskalkyl] Could not find anchor element on ${adapter.name} after retries`);
@@ -242,3 +244,48 @@ if (document.readyState === 'loading') {
   // DOM is already ready
   startWhenReady();
 }
+
+/**
+ * Extra fallback: Watch for significant DOM changes that might indicate
+ * SPA content has loaded (especially for Blocket which loads content dynamically)
+ */
+function setupContentObserver(): void {
+  let lastMainContent = '';
+
+  const checkForNewContent = (): void => {
+    // Only check on Blocket URLs
+    if (!location.hostname.includes('blocket.se')) {
+      return;
+    }
+
+    // Check if advertising-initial-state script appeared
+    const adScript = document.getElementById('advertising-initial-state');
+    const currentContent = adScript?.textContent || '';
+
+    if (currentContent && currentContent !== lastMainContent) {
+      lastMainContent = currentContent;
+
+      // If we don't have an overlay yet, try to initialize
+      if (!currentOverlay && !initInProgress) {
+        init();
+      }
+    }
+  };
+
+  // Observe DOM changes
+  const observer = new MutationObserver(() => {
+    checkForNewContent();
+  });
+
+  // Start observing once DOM is ready
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+  }
+}
+
+// Start the content observer for Blocket SPA support
+setupContentObserver();
