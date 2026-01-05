@@ -425,15 +425,14 @@ function extractSpecs(): {
   const originalText = document.body.innerText;
 
   // Try multiple patterns for effective interest rate
+  // IMPORTANT: Only match "effektiv ränta" explicitly - avoid matching "nominell ränta"
   const effectiveRatePatterns = [
     // "Effektiv ränta: 5.55%" or "Effektiv ränta 5,55 %"
     /effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i,
     // "Eff. ränta: 5.55%"
-    /eff\.?\s*ränta[:\s]*([\d,\.]+)\s*%/i,
+    /eff\.\s*ränta[:\s]*([\d,\.]+)\s*%/i,
     // "Effektiv ränta" on one line, number on next (with newline)
     /effektiv\s*ränta[\s\n]*([\d,\.]+)\s*%/i,
-    // Just "ränta" followed by percentage in loan context
-    /(?:billån|finansiering|lån)[\s\S]{0,100}ränta[:\s]*([\d,\.]+)\s*%/i,
     // Pattern with non-breaking spaces
     /effektiv[\s\u00a0]*ränta[\s\u00a0:\-]*([\d,\.]+)[\s\u00a0]*%/i,
   ];
