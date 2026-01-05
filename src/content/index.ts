@@ -42,11 +42,8 @@ const siteAdapters: SiteAdapter[] = [
 let currentOverlay: CostOverlay | null = null;
 let currentVehicleData: VehicleData | null = null;
 let currentAdapter: SiteAdapter | null = null;
-let currentPreferences: UserPreferences | null = null;
 let lastProcessedUrl: string = '';
 let initInProgress: boolean = false;
-let interestRateObserver: MutationObserver | null = null;
-let lastExtractedRate: number | null = null;
 
 /**
  * Detects which site adapter to use based on current page
@@ -62,118 +59,15 @@ function detectSiteAdapter(): SiteAdapter | null {
 }
 
 /**
- * Cleans up the current overlay and observers
+ * Cleans up the current overlay
  */
 function cleanup(): void {
   if (currentOverlay) {
     currentOverlay.destroy();
     currentOverlay = null;
   }
-  if (interestRateObserver) {
-    interestRateObserver.disconnect();
-    interestRateObserver = null;
-  }
   currentVehicleData = null;
   currentAdapter = null;
-  currentPreferences = null;
-  lastExtractedRate = null;
-}
-
-/**
- * Extracts effective interest rate from page text
- * @returns The extracted rate or null if not found
- */
-function extractEffectiveInterestRate(): number | null {
-  const text = document.body.innerText;
-
-  const patterns = [
-    /effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i,
-    /eff\.?\s*ränta[:\s]*([\d,\.]+)\s*%/i,
-    /effektiv\s*ränta[\s\n]*([\d,\.]+)\s*%/i,
-    /effektiv[\s\u00a0]*ränta[\s\u00a0:\-]*([\d,\.]+)[\s\u00a0]*%/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
-      const rate = parseFloat(match[1].replace(',', '.'));
-      if (rate > 0.1 && rate < 30) {
-        return rate;
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Debounced handler for interest rate changes
- */
-let rateChangeTimeout: ReturnType<typeof setTimeout> | null = null;
-
-function handlePotentialRateChange(): void {
-  // Debounce rapid changes
-  if (rateChangeTimeout) {
-    clearTimeout(rateChangeTimeout);
-  }
-
-  rateChangeTimeout = setTimeout(() => {
-    rateChangeTimeout = null;
-
-    if (!currentVehicleData || !currentOverlay || !currentPreferences) return;
-
-    const newRate = extractEffectiveInterestRate();
-
-    // Only update if rate actually changed
-    if (newRate !== null && newRate !== lastExtractedRate) {
-      lastExtractedRate = newRate;
-      currentVehicleData.effectiveInterestRate = newRate;
-
-      // Update preferences with new rate
-      const updatedPrefs = {
-        ...currentPreferences,
-        interestRate: newRate,
-      };
-
-      // Recalculate and update overlay
-      const input = createCalculatorInput(currentVehicleData, updatedPrefs);
-      const costs = calculateCosts(input);
-      currentOverlay.update(costs, updatedPrefs);
-    }
-  }, 300); // 300ms debounce
-}
-
-/**
- * Sets up observer to watch for interest rate changes on the page
- */
-function setupInterestRateObserver(): void {
-  if (interestRateObserver) {
-    interestRateObserver.disconnect();
-  }
-
-  interestRateObserver = new MutationObserver((mutations) => {
-    // Check if any mutation might affect the interest rate display
-    for (const mutation of mutations) {
-      if (mutation.type === 'childList' || mutation.type === 'characterData') {
-        // Check if the mutation is in an area that might contain financing info
-        const target = mutation.target as Element;
-        const text = target.textContent?.toLowerCase() || '';
-
-        if (text.includes('ränta') || text.includes('effektiv') ||
-            text.includes('finansiering') || text.includes('lån') ||
-            text.includes('%')) {
-          handlePotentialRateChange();
-          break;
-        }
-      }
-    }
-  });
-
-  // Observe the entire body for changes, but filter in the callback
-  interestRateObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-    characterData: true,
-  });
 }
 
 /**
@@ -230,12 +124,7 @@ async function init(retryCount: number = 0): Promise<void> {
         ...preferences,
         interestRate: vehicleData.effectiveInterestRate,
       };
-      // Store initial rate for change detection
-      lastExtractedRate = vehicleData.effectiveInterestRate;
     }
-
-    // Store preferences for dynamic updates
-    currentPreferences = preferences;
 
     // Calculate costs
     const input = createCalculatorInput(vehicleData, preferences);
@@ -257,15 +146,10 @@ async function init(retryCount: number = 0): Promise<void> {
     // Remove existing overlay if present
     cleanup();
     currentAdapter = adapter;
-    currentPreferences = preferences;
-    lastExtractedRate = vehicleData.effectiveInterestRate;
 
     // Create and inject new overlay
     currentOverlay = new CostOverlay(costs, vehicleData, preferences, anchor);
     lastProcessedUrl = currentUrl;
-
-    // Start watching for interest rate changes (user changing loan terms)
-    setupInterestRateObserver();
   } finally {
     initInProgress = false;
   }
@@ -276,9 +160,6 @@ async function init(retryCount: number = 0): Promise<void> {
  */
 function handlePreferencesChange(newPrefs: UserPreferences): void {
   if (!currentVehicleData || !currentOverlay) return;
-
-  // Keep current preferences in sync
-  currentPreferences = newPrefs;
 
   const input = createCalculatorInput(currentVehicleData, newPrefs);
   const costs = calculateCosts(input);
