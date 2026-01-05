@@ -2469,7 +2469,7 @@ export class CostOverlay {
       { label: 'Värdeminskning', value: this.costs.depreciation, color: '#3b82f6', estimated: false, tooltip: `Beräknad med ${depreciationInfo}. Baserad på köpeskillingen ${this.formatNumber(this.vehicleData.purchasePrice)} kr under ${this.preferences.ownershipYears} års ägande.` },
       { label: 'Fordonsskatt', value: this.costs.tax, color: '#f59e0b', estimated: false, tooltip: null },
       { label: 'Underhåll', value: this.costs.maintenance, color: '#f97316', estimated: this.vehicleData.isEstimated.vehicleType, tooltip: null },
-      { label: 'Däck', value: this.costs.tires, color: '#ef4444', estimated: this.vehicleData.isEstimated.vehicleType, tooltip: `Engångskostnad för däckbyte.` },
+      { label: 'Däck', value: this.costs.tires, color: '#ef4444', estimated: this.vehicleData.isEstimated.vehicleType, tooltip: null },
       { label: 'Försäkring', value: this.costs.insurance, color: '#8b5cf6', estimated: false, tooltip: null },
       { label: 'Parkering', value: this.costs.parking, color: '#ec4899', estimated: false, tooltip: null },
     ];
