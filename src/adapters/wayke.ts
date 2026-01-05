@@ -62,7 +62,7 @@ export async function extractWaykeData(): Promise<VehicleData | null> {
       co2Emissions: specs.co2,
       vehicleType,
       vehicleName,
-      effectiveInterestRate: null, // Wayke doesn't show this directly
+      effectiveInterestRate: specs.effectiveInterestRate,
       isEstimated,
     };
   } catch (error) {
@@ -157,6 +157,7 @@ function extractSpecs(): {
   co2: number | null;
   model: string | null;
   brand: string | null;
+  effectiveInterestRate: number | null;
 } {
   const specs = {
     fuelType: null as string | null,
@@ -167,6 +168,7 @@ function extractSpecs(): {
     co2: null as number | null,
     model: null as string | null,
     brand: null as string | null,
+    effectiveInterestRate: null as number | null,
   };
 
   const pageText = document.body.innerText.toLowerCase();
@@ -231,6 +233,18 @@ function extractSpecs(): {
   const co2Match = pageText.match(/co2[:\s]*(\d+)\s*g/i);
   if (co2Match) {
     specs.co2 = parseInt(co2Match[1], 10);
+  }
+
+  // Extract effective interest rate from financing section
+  // Wayke format: "Effektiv ränta" followed by "7.18 %" or "7,18 %"
+  const effectiveRateMatch = document.body.innerText.match(
+    /effektiv\s*ränta[:\s]*([\d,\.]+)\s*%/i
+  );
+  if (effectiveRateMatch) {
+    const rate = parseFloat(effectiveRateMatch[1].replace(',', '.'));
+    if (rate > 0 && rate < 50) { // Sanity check: reasonable interest rate
+      specs.effectiveInterestRate = rate;
+    }
   }
 
   // Extract brand and model from URL or title
