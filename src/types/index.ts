@@ -5,7 +5,8 @@
 /** Vehicle data extracted from car listing page */
 export interface VehicleData {
   purchasePrice: number;
-  fuelType: string;
+  fuelType: string;  // Normalized type for calculations (e.g., 'laddhybrid', 'diesel')
+  fuelTypeLabel: string | null;  // Original label from ad for display (e.g., 'Bensin+El', 'Diesel')
   fuelConsumption: number | null;  // null if needs estimation
   vehicleYear: number | null;
   mileage: number | null;
@@ -113,4 +114,23 @@ export interface CostBreakdown {
   costPerMil: number;
   costPerKm: string;
   monthlyTotal: number;
+}
+
+/** Site identifier for history tracking */
+export type SiteName = 'blocket' | 'wayke' | 'carla';
+
+/** History item for a viewed car */
+export interface HistoryItem {
+  id: string;
+  url: string;
+  site: SiteName;
+  vehicleName: string | null;
+  purchasePrice: number;
+  fuelType: string;
+  fuelTypeLabel: string | null;
+  vehicleYear: number | null;
+  mileage: number | null;
+  monthlyTotal: number;
+  costPerMil: number;
+  timestamp: number;
 }

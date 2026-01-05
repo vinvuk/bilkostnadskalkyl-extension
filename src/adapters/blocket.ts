@@ -2,8 +2,9 @@
  * Data extractor for Blocket.se car listings
  */
 
-import { VehicleData, VehicleType } from '../types';
+import { VehicleData } from '../types';
 import { ESTIMATED_CONSUMPTION } from '../core/constants';
+import { inferVehicleType, buildVehicleName } from './shared';
 
 /**
  * Checks if current page is a Blocket.se car listing
@@ -16,6 +17,38 @@ export function isBlocketListingPage(): boolean {
 }
 
 /**
+ * Checks if this is a leasing listing (not a purchase listing)
+ * @returns true if this appears to be a leasing ad
+ */
+function isLeasingListing(): boolean {
+  const pageText = document.body.innerText.toLowerCase();
+
+  // Check for leasing indicators
+  const leasingIndicators = [
+    /privatleasing/i,
+    /företagsleasing/i,
+    /leasing\s*från/i,
+    /leasingkostnad/i,
+    /kr\/mån\s*(?:ink|ex)/i,  // "kr/mån ink" or "kr/mån ex"
+    /månadskostnad\s*(?:ink|ex)/i,
+  ];
+
+  for (const pattern of leasingIndicators) {
+    if (pattern.test(pageText)) {
+      return true;
+    }
+  }
+
+  // Check advertising data for leasing category
+  const adData = extractAdvertisingData();
+  if (adData?.category?.[0]?.toLowerCase().includes('leasing')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Extracts vehicle data from Blocket.se listing page
  * @returns VehicleData or null if extraction fails
  */
@@ -23,6 +56,12 @@ export async function extractBlocketData(): Promise<VehicleData | null> {
   try {
     // Wait for dynamic content to load
     await waitForContent();
+
+    // Check if this is a leasing listing
+    if (isLeasingListing()) {
+      console.log('[Bilkostnadskalkyl] Skipping leasing listing - calculator only supports purchase');
+      return null;
+    }
 
     // Extract price
     const purchasePrice = extractPrice();
@@ -55,6 +94,7 @@ export async function extractBlocketData(): Promise<VehicleData | null> {
     return {
       purchasePrice,
       fuelType,
+      fuelTypeLabel: specs.fuelTypeLabel,
       fuelConsumption,
       vehicleYear: specs.year,
       mileage: specs.mileage,
@@ -190,27 +230,51 @@ function extractAdvertisingData(): Record<string, string[]> | null {
 function extractPrice(): number | null {
   // Strategy 1: Use structured data (most reliable)
   const adData = extractAdvertisingData();
+  console.log('[Bilkostnadskalkyl] Blocket adData:', adData);
+
   if (adData?.price?.[0]) {
     const price = parseInt(adData.price[0], 10);
-    if (price >= 30000 && price <= 5000000) {
+    console.log('[Bilkostnadskalkyl] Blocket price from JSON:', price);
+    if (price >= 10000 && price <= 10000000) {
       return price;
     }
   }
 
   // Strategy 2: Fallback to text pattern matching
   const pageText = document.body.innerText;
-  const pricePattern = /(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr/g;
   const matches: number[] = [];
 
+  // Pattern 1: Price with spaces (e.g., "199 000 kr" or "1 234 567 kr")
+  const spacePattern = /(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr/g;
   let match;
-  while ((match = pricePattern.exec(pageText)) !== null) {
+  while ((match = spacePattern.exec(pageText)) !== null) {
     const priceStr = match[1].replace(/[\s\u00a0]/g, '');
     const price = parseInt(priceStr, 10);
-    // Filter for reasonable car prices (30k - 5M SEK)
-    if (price >= 30000 && price <= 5000000) {
+    if (price >= 10000 && price <= 10000000) {
       matches.push(price);
     }
   }
+
+  // Pattern 2: Price without spaces (e.g., "199000 kr" or "199000kr")
+  const noSpacePattern = /(\d{5,7})\s*kr/g;
+  while ((match = noSpacePattern.exec(pageText)) !== null) {
+    const price = parseInt(match[1], 10);
+    if (price >= 10000 && price <= 10000000) {
+      matches.push(price);
+    }
+  }
+
+  // Pattern 3: "Pris X kr" or "Pris: X kr" format
+  const labeledPattern = /Pris[:\s]*(\d[\d\s\u00a0]*)\s*kr/gi;
+  while ((match = labeledPattern.exec(pageText)) !== null) {
+    const priceStr = match[1].replace(/[\s\u00a0]/g, '');
+    const price = parseInt(priceStr, 10);
+    if (price >= 10000 && price <= 10000000) {
+      matches.push(price);
+    }
+  }
+
+  console.log('[Bilkostnadskalkyl] Blocket price matches from text:', matches);
 
   if (matches.length > 0) {
     // Return the highest price (likely the purchase price, not down payment)
@@ -232,7 +296,11 @@ function mapBlocketFuelCode(code: string): string | null {
     '4': 'hybrid',
     '5': 'laddhybrid',
     '6': 'e85',
-    '7': 'biogas',
+    '7': 'gas',      // Biogas
+    '8': 'gas',      // Fordonsgas/CNG
+    '9': 'gas',      // Alternative gas code
+    '10': 'laddhybrid',  // Bensin/El hybrid variant (plug-in)
+    '11': 'hvo',     // HVO (renewable diesel)
   };
   return fuelMap[code] || null;
 }
@@ -243,6 +311,7 @@ function mapBlocketFuelCode(code: string): string | null {
  */
 function extractSpecs(): {
   fuelType: string | null;
+  fuelTypeLabel: string | null;
   fuelConsumption: number | null;
   year: number | null;
   mileage: number | null;
@@ -253,6 +322,7 @@ function extractSpecs(): {
 } {
   const specs = {
     fuelType: null as string | null,
+    fuelTypeLabel: null as string | null,
     fuelConsumption: null as number | null,
     year: null as number | null,
     mileage: null as number | null,
@@ -283,7 +353,9 @@ function extractSpecs(): {
 
     // Extract fuel type from code
     if (adData.fuel?.[0]) {
-      specs.fuelType = mapBlocketFuelCode(adData.fuel[0]);
+      const fuelCode = adData.fuel[0];
+      specs.fuelType = mapBlocketFuelCode(fuelCode);
+      console.log('[Bilkostnadskalkyl] Blocket fuel code:', fuelCode, '-> mapped to:', specs.fuelType);
     }
 
     // Extract brand and model
@@ -326,20 +398,29 @@ function extractSpecs(): {
     { pattern: /\belbil\b|100%?\s*el\b|electric/i, type: 'el' },
     { pattern: /\bladdhybrid\b|plug-?in\s*hybrid|phev/i, type: 'laddhybrid' },
     { pattern: /\bhybrid\b|elhybrid|mild\s*hybrid/i, type: 'hybrid' },
+    { pattern: /\bhvo\b|hvo100/i, type: 'hvo' },
     { pattern: /\bdiesel\b/i, type: 'diesel' },
     { pattern: /\bbensin\b|petrol/i, type: 'bensin' },
     { pattern: /\be85\b|\betanol\b/i, type: 'e85' },
-    { pattern: /\bgas\b|\bbiogas\b|\bcng\b/i, type: 'biogas' },
+    { pattern: /\bfordonsgas\b|\bbiogas\b|\bcng\b|\bgas\b/i, type: 'gas' },
   ];
 
-  if (!specs.fuelType) {
-    // Check the Drivmedel field specifically
-    const drivmedelMatch = pageText.match(/Drivmedel\s*[\n\r]?\s*(\w+)/i);
-    if (drivmedelMatch) {
-      const drivmedel = drivmedelMatch[1].toLowerCase();
+  // Always try to get the original label from Drivmedel field (even if we have fuel type from JSON)
+  const drivmedelMatch = pageText.match(/Drivmedel\s*[\n\r]?\s*([^\n\r]+)/i);
+  if (drivmedelMatch) {
+    const drivmedelOriginal = drivmedelMatch[1].trim();
+    const drivmedel = drivmedelOriginal.toLowerCase();
+    console.log('[Bilkostnadskalkyl] Drivmedel field:', drivmedel);
+
+    // Store the original label
+    specs.fuelTypeLabel = drivmedelOriginal.charAt(0).toUpperCase() + drivmedelOriginal.slice(1);
+
+    // If we don't have fuel type yet, try to detect it from the text
+    if (!specs.fuelType) {
       for (const { pattern, type } of fuelPatterns) {
         if (pattern.test(drivmedel)) {
           specs.fuelType = type;
+          console.log('[Bilkostnadskalkyl] Matched fuel type:', type, 'label:', specs.fuelTypeLabel);
           break;
         }
       }
@@ -407,77 +488,6 @@ function extractSpecs(): {
   }
 
   return specs;
-}
-
-/**
- * Infers vehicle type based on brand, model, and power
- */
-function inferVehicleType(
-  model: string | null,
-  brand: string | null,
-  power: number | null
-): VehicleType {
-  const modelLower = (model || '').toLowerCase();
-  const brandLower = (brand || '').toLowerCase();
-
-  // Luxury brands
-  const luxuryBrands = ['porsche', 'bmw', 'mercedes', 'audi', 'lexus', 'jaguar', 'maserati', 'bentley', 'rolls'];
-  if (luxuryBrands.some(b => brandLower.includes(b))) {
-    return power && power > 300 ? 'luxury' : 'large';
-  }
-
-  // Large SUVs and models
-  const largeModels = ['xc90', 'xc60', 'q7', 'q8', 'x5', 'x6', 'x7', 'gle', 'gls', 'cayenne', 'touareg', 'land cruiser', 'bigster'];
-  if (largeModels.some(m => modelLower.includes(m))) {
-    return 'large';
-  }
-
-  // Simple/small cars
-  const simpleModels = ['up', 'mii', 'citigo', 'aygo', 'c1', '108', 'twingo', 'smart', 'i10', 'picanto', 'spark', 'sandero', 'spring'];
-  if (simpleModels.some(m => modelLower.includes(m))) {
-    return 'simple';
-  }
-
-  // Budget brands tend to be simpler
-  const budgetBrands = ['dacia', 'seat', 'skoda'];
-  if (budgetBrands.some(b => brandLower.includes(b)) && (!power || power < 150)) {
-    return 'simple';
-  }
-
-  // Default based on power
-  if (power) {
-    if (power > 300) return 'large';
-    if (power < 100) return 'simple';
-  }
-
-  return 'normal';
-}
-
-/**
- * Builds a display-friendly vehicle name from extracted parts
- */
-function buildVehicleName(
-  brand: string | null,
-  model: string | null,
-  year: number | null
-): string | null {
-  if (brand && model) {
-    const capitalizedBrand = brand.charAt(0).toUpperCase() + brand.slice(1).toLowerCase();
-    const capitalizedModel = model.charAt(0).toUpperCase() + model.slice(1);
-    const yearStr = year ? ` ${year}` : '';
-    return `${capitalizedBrand} ${capitalizedModel}${yearStr}`;
-  }
-
-  // Fallback: try to get from h1
-  const h1 = document.querySelector('h1');
-  if (h1?.textContent) {
-    const title = h1.textContent.trim();
-    if (title.length > 3 && title.length < 50) {
-      return year ? `${title} ${year}` : title;
-    }
-  }
-
-  return null;
 }
 
 /**

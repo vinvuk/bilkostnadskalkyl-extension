@@ -7,9 +7,10 @@ import { isCarlaListingPage, extractCarlaData, getOverlayAnchor as getCarlaAncho
 import { isWaykeListingPage, extractWaykeData, getWaykeOverlayAnchor } from '../adapters/wayke';
 import { isBlocketListingPage, extractBlocketData, getBlocketOverlayAnchor } from '../adapters/blocket';
 import { loadPreferences, onPreferencesChange } from '../storage/preferences';
+import { saveToHistory } from '../storage/history';
 import { calculateCosts, createCalculatorInput } from '../core/calculator';
 import { CostOverlay } from '../overlay/overlay';
-import { VehicleData, UserPreferences } from '../types';
+import { VehicleData, UserPreferences, SiteName } from '../types';
 
 /**
  * Site adapter interface for extracting data from different car listing sites
@@ -66,6 +67,20 @@ function detectSiteAdapter(): SiteAdapter | null {
 }
 
 /**
+ * Converts adapter name to SiteName type for history
+ * @param adapterName - Name of the adapter (e.g., "Blocket.se")
+ * @returns SiteName type
+ */
+function getSiteName(adapterName: string): SiteName {
+  const nameMap: Record<string, SiteName> = {
+    'Carla.se': 'carla',
+    'Wayke.se': 'wayke',
+    'Blocket.se': 'blocket',
+  };
+  return nameMap[adapterName] || 'blocket';
+}
+
+/**
  * Cleans up the current overlay
  */
 function cleanup(): void {
@@ -83,24 +98,29 @@ function cleanup(): void {
  */
 async function init(retryCount: number = 0): Promise<void> {
   const currentUrl = location.href;
+  console.log('[Bilkostnadskalkyl] init() called, retry:', retryCount, 'url:', currentUrl);
 
   // Prevent duplicate initialization for same URL
   if (currentUrl === lastProcessedUrl && currentOverlay) {
+    console.log('[Bilkostnadskalkyl] Skipping init - already processed this URL');
     return;
   }
 
   // Prevent concurrent initialization
   if (initInProgress) {
+    console.log('[Bilkostnadskalkyl] Skipping init - already in progress');
     return;
   }
 
   // Detect which site we're on
   const adapter = detectSiteAdapter();
   if (!adapter) {
+    console.log('[Bilkostnadskalkyl] No adapter detected for this page');
     cleanup();
     lastProcessedUrl = '';
     return;
   }
+  console.log('[Bilkostnadskalkyl] Detected adapter:', adapter.name);
 
   initInProgress = true;
   currentAdapter = adapter;
@@ -159,6 +179,12 @@ async function init(retryCount: number = 0): Promise<void> {
     // Create and inject new overlay
     currentOverlay = new CostOverlay(costs, vehicleData, preferences, anchor);
     lastProcessedUrl = currentUrl;
+
+    // Save to history (async, don't await to not block UI)
+    const siteName = getSiteName(adapter.name);
+    saveToHistory(vehicleData, costs, siteName, currentUrl).catch(err => {
+      console.warn('[Bilkostnadskalkyl] Failed to save to history:', err);
+    });
   } finally {
     initInProgress = false;
   }
@@ -204,14 +230,18 @@ function handleUrlChange(): void {
 // This must run before the SPA router sets up to catch all navigations
 const originalPushState = history.pushState;
 history.pushState = function(...args) {
+  const previousUrl = location.href;
   originalPushState.apply(this, args);
+  console.log('[Bilkostnadskalkyl] history.pushState intercepted:', previousUrl, '->', location.href);
   handleUrlChange();
 };
 
 // Intercept history.replaceState for SPA navigation
 const originalReplaceState = history.replaceState;
 history.replaceState = function(...args) {
+  const previousUrl = location.href;
   originalReplaceState.apply(this, args);
+  console.log('[Bilkostnadskalkyl] history.replaceState intercepted:', previousUrl, '->', location.href);
   handleUrlChange();
 };
 
@@ -224,14 +254,15 @@ window.addEventListener('popstate', () => {
  * Starts polling and initial setup once DOM is ready
  */
 function startWhenReady(): void {
-  // Fallback: Poll for URL changes every 1 second
+  // Fallback: Poll for URL changes every 500ms (more aggressive for SPAs)
   let lastKnownUrl = location.href;
   setInterval(() => {
     if (location.href !== lastKnownUrl) {
+      console.log('[Bilkostnadskalkyl] URL change detected via polling:', lastKnownUrl, '->', location.href);
       lastKnownUrl = location.href;
       handleUrlChange();
     }
-  }, 1000);
+  }, 500);
 
   // Initialize if we're already on a car listing page
   init();
@@ -251,6 +282,7 @@ if (document.readyState === 'loading') {
  */
 function setupContentObserver(): void {
   let lastMainContent = '';
+  let lastH1Content = '';
 
   const checkForNewContent = (): void => {
     // Only check on Blocket URLs
@@ -258,15 +290,32 @@ function setupContentObserver(): void {
       return;
     }
 
-    // Check if advertising-initial-state script appeared
+    // Check if we're on a listing page based on URL
+    const isListingUrl = /^\/mobility\/item\/\d+/.test(location.pathname);
+
+    // Check if advertising-initial-state script appeared or changed
     const adScript = document.getElementById('advertising-initial-state');
     const currentContent = adScript?.textContent || '';
 
-    if (currentContent && currentContent !== lastMainContent) {
-      lastMainContent = currentContent;
+    // Also watch for H1 changes (indicates page content has changed)
+    const h1 = document.querySelector('h1');
+    const h1Content = h1?.textContent || '';
 
-      // If we don't have an overlay yet, try to initialize
-      if (!currentOverlay && !initInProgress) {
+    const contentChanged = currentContent && currentContent !== lastMainContent;
+    const h1Changed = h1Content && h1Content !== lastH1Content;
+
+    if (contentChanged || h1Changed) {
+      if (contentChanged) {
+        lastMainContent = currentContent;
+      }
+      if (h1Changed) {
+        lastH1Content = h1Content;
+        console.log('[Bilkostnadskalkyl] H1 content changed:', h1Content);
+      }
+
+      // If we're on a listing page and don't have an overlay, initialize
+      if (isListingUrl && !currentOverlay && !initInProgress) {
+        console.log('[Bilkostnadskalkyl] Content observer triggering init on listing page');
         init();
       }
     }
@@ -287,5 +336,71 @@ function setupContentObserver(): void {
   }
 }
 
+/**
+ * Watch for click events that might trigger SPA navigation
+ * This helps catch navigation that bypasses history.pushState interception
+ */
+function setupClickObserver(): void {
+  const handleClick = (event: MouseEvent): void => {
+    // Only track on Blocket
+    if (!location.hostname.includes('blocket.se')) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    const link = target.closest('a');
+
+    if (link?.href) {
+      const url = new URL(link.href);
+      // Check if this is a navigation to a listing page
+      if (url.hostname.includes('blocket.se') && /^\/mobility\/item\/\d+/.test(url.pathname)) {
+        console.log('[Bilkostnadskalkyl] Click on listing link detected:', url.pathname);
+        // Schedule a check after the navigation happens
+        setTimeout(() => {
+          if (location.pathname === url.pathname && !currentOverlay && !initInProgress) {
+            console.log('[Bilkostnadskalkyl] Post-click init trigger');
+            init();
+          }
+        }, 300);
+        setTimeout(() => {
+          if (location.pathname === url.pathname && !currentOverlay && !initInProgress) {
+            init();
+          }
+        }, 800);
+      }
+    }
+  };
+
+  // Use capture phase to catch events before they're handled by SPA
+  document.addEventListener('click', handleClick, true);
+}
+
 // Start the content observer for Blocket SPA support
 setupContentObserver();
+
+// Start the click observer for navigation detection
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupClickObserver);
+} else {
+  setupClickObserver();
+}
+
+/**
+ * Listen for messages from background script
+ * The background script handles panel injection directly,
+ * so we just acknowledge the message here.
+ */
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  try {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message.action === 'toggleInfoPanel') {
+        // Background script will inject the panel directly
+        // We just acknowledge that the content script is active
+        sendResponse({ success: true, contentScriptActive: true });
+        return true;
+      }
+    });
+  } catch (error) {
+    console.warn('[Bilkostnadskalkyl] Could not set up message listener:', error);
+  }
+}

@@ -5,6 +5,7 @@
 
 import { CostBreakdown, VehicleData, UserPreferences } from '../types';
 import { calculateCosts, createCalculatorInput } from '../core/calculator';
+import { FUEL_TYPES } from '../core/constants';
 import { isExtensionContextValid } from '../storage/preferences';
 
 type ViewState = 'collapsed' | 'expanded' | 'methodology';
@@ -68,12 +69,12 @@ const overlayStyles = `
   background: var(--bkk-bg);
   color: var(--bkk-text);
   border-radius: 60px;
-  padding: 8px 12px 8px 10px;
+  padding: 12px 18px 12px 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   border: 1px solid var(--bkk-border);
   backdrop-filter: blur(24px) saturate(180%);
@@ -88,8 +89,8 @@ const overlayStyles = `
 }
 
 .bkk-badge-icon {
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: 52px;
   background: linear-gradient(135deg, var(--bkk-accent) 0%, #10b981 100%);
   border-radius: 50%;
   display: flex;
@@ -100,8 +101,8 @@ const overlayStyles = `
 }
 
 .bkk-badge-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   color: white;
 }
 
@@ -113,7 +114,7 @@ const overlayStyles = `
 }
 
 .bkk-badge-value {
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -122,7 +123,7 @@ const overlayStyles = `
 }
 
 .bkk-badge-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--bkk-text-secondary);
   text-transform: uppercase;
@@ -130,8 +131,8 @@ const overlayStyles = `
 }
 
 .bkk-badge-expand {
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -142,8 +143,8 @@ const overlayStyles = `
 }
 
 .bkk-badge-expand svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   transition: transform 0.25s ease-out;
 }
 
@@ -201,7 +202,6 @@ const overlayStyles = `
   border: 1px solid var(--bkk-border);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  overflow: hidden;
 }
 
 @keyframes expandIn {
@@ -336,8 +336,9 @@ const overlayStyles = `
 
 .bkk-summary {
   text-align: center;
-  padding: 0 0 24px;
+  padding: 0 10px 24px;
   margin-bottom: 20px;
+  overflow: visible;
   position: relative;
 }
 
@@ -356,17 +357,17 @@ const overlayStyles = `
   align-items: baseline;
   justify-content: center;
   gap: 6px;
+  overflow: visible;
 }
 
 .bkk-value {
   font-size: 44px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  background: linear-gradient(135deg, #fff 0%, var(--bkk-accent) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 0 40px var(--bkk-accent-glow), 0 2px 4px rgba(0,0,0,0.3);
+  white-space: nowrap;
 }
 
 .bkk-unit {
@@ -1626,10 +1627,14 @@ export class CostOverlay {
     const isElectric = fuelType === 'el';
     const isPluginHybrid = fuelType === 'laddhybrid';
 
-    // Fuel label and value for summary
-    const fuelLabel = isElectric ? 'El' : isPluginHybrid ? 'Bensin + El' : 'Bensin';
+    // Fuel label based on detected vehicle fuel type
+    // Use original label from ad, fallback to FUEL_TYPES label
+    const fuelTypeInfo = FUEL_TYPES.find(f => f.value === fuelType);
+    const fuelLabel = this.vehicleData.fuelTypeLabel || fuelTypeInfo?.label || fuelType.charAt(0).toUpperCase() + fuelType.slice(1);
+
+    // Fuel value and unit
     const fuelValue = isElectric ? this.preferences.secondaryFuelPrice : this.preferences.primaryFuelPrice;
-    const fuelUnit = isElectric ? 'kr/kWh' : 'kr/l';
+    const fuelUnit = isElectric ? 'kr/kWh' : (fuelType === 'gas' || fuelType === 'biogas') ? 'kr/kg' : 'kr/l';
 
     // Insurance summary for prices section
     const insuranceSummary = this.preferences.insurance > 0
@@ -2437,7 +2442,7 @@ export class CostOverlay {
     this.isSelfUpdate = true;
 
     // Save to chrome.storage (async, for persistence)
-    if (isExtensionContextValid()) {
+    if (isExtensionContextValid() && chrome?.storage?.sync?.set) {
       try {
         chrome.storage.sync.set({ bilkostnadskalkyl_preferences: fullPrefs });
       } catch {
@@ -2452,10 +2457,9 @@ export class CostOverlay {
   private renderBreakdown(): string {
     // Dynamic label based on fuel type
     const fuelType = this.vehicleData.fuelType.toLowerCase();
-    const fuelLabel = fuelType === 'el' ? 'El' :
-                      fuelType === 'laddhybrid' ? 'Bränsle + El' :
-                      fuelType === 'hybrid' ? 'Bränsle' :
-                      'Bränsle';
+    // Use original label from ad, fallback to FUEL_TYPES label
+    const fuelTypeInfo = FUEL_TYPES.find(f => f.value === fuelType);
+    const fuelLabel = this.vehicleData.fuelTypeLabel || fuelTypeInfo?.label || fuelType.charAt(0).toUpperCase() + fuelType.slice(1);
 
     // Depreciation info for tooltip
     const depreciationRate = this.preferences.depreciationRate;
@@ -2527,11 +2531,11 @@ export class CostOverlay {
    * Saves the expanded state preference
    */
   private saveExpandedPreference(expanded: boolean): void {
-    if (!isExtensionContextValid()) return;
+    if (!isExtensionContextValid() || !chrome?.storage?.sync) return;
 
     try {
       chrome.storage.sync.get('bilkostnadskalkyl_preferences', (result) => {
-        if (!isExtensionContextValid()) return;
+        if (!isExtensionContextValid() || !chrome?.storage?.sync?.set) return;
 
         try {
           const prefs = result.bilkostnadskalkyl_preferences || {};
@@ -2614,10 +2618,13 @@ export class CostOverlay {
 
     const fuelType = this.vehicleData.fuelType.toLowerCase();
     const isElectric = fuelType === 'el';
-    const isPluginHybrid = fuelType === 'laddhybrid';
-    const fuelLabel = isElectric ? 'El' : isPluginHybrid ? 'Bensin + El' : 'Bensin';
+
+    // Fuel label based on detected vehicle fuel type
+    // Use original label from ad, fallback to FUEL_TYPES label
+    const fuelTypeInfo = FUEL_TYPES.find(f => f.value === fuelType);
+    const fuelLabel = this.vehicleData.fuelTypeLabel || fuelTypeInfo?.label || fuelType.charAt(0).toUpperCase() + fuelType.slice(1);
     const fuelValue = isElectric ? this.preferences.secondaryFuelPrice : this.preferences.primaryFuelPrice;
-    const fuelUnit = isElectric ? 'kr/kWh' : 'kr/l';
+    const fuelUnit = isElectric ? 'kr/kWh' : (fuelType === 'gas' || fuelType === 'biogas') ? 'kr/kg' : 'kr/l';
     const insuranceSummary = this.preferences.insurance > 0
       ? `Försäkring ${this.formatNumber(this.preferences.insurance)} kr/mån`
       : '';
@@ -2659,7 +2666,7 @@ export class CostOverlay {
    */
   private async loadPosition(): Promise<void> {
     return new Promise((resolve) => {
-      if (!isExtensionContextValid()) {
+      if (!isExtensionContextValid() || !chrome?.storage?.sync?.get) {
         resolve();
         return;
       }
@@ -2682,7 +2689,7 @@ export class CostOverlay {
    * Saves current position to chrome.storage
    */
   private savePosition(): void {
-    if (this.position && isExtensionContextValid()) {
+    if (this.position && isExtensionContextValid() && chrome?.storage?.sync?.set) {
       try {
         chrome.storage.sync.set({ bilkostnadskalkyl_position: this.position });
       } catch {
@@ -2818,7 +2825,7 @@ export class CostOverlay {
     this.container.style.left = '';
     this.container.style.right = '';
 
-    if (isExtensionContextValid()) {
+    if (isExtensionContextValid() && chrome?.storage?.sync?.remove) {
       try {
         chrome.storage.sync.remove('bilkostnadskalkyl_position');
       } catch {
@@ -2928,8 +2935,9 @@ export class CostOverlay {
   private exportToPDF(): void {
     const vehicleName = this.vehicleData.vehicleName || 'Bil';
     const fuelType = this.vehicleData.fuelType.toLowerCase();
-    const fuelLabel = fuelType === 'el' ? 'El' :
-                      fuelType === 'laddhybrid' ? 'Bränsle + El' : 'Bränsle';
+    // Use original label from ad, fallback to FUEL_TYPES label
+    const fuelTypeInfo = FUEL_TYPES.find(f => f.value === fuelType);
+    const fuelLabel = this.vehicleData.fuelTypeLabel || fuelTypeInfo?.label || fuelType.charAt(0).toUpperCase() + fuelType.slice(1);
 
     // Build breakdown items
     const breakdownItems = [

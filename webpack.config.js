@@ -5,12 +5,15 @@ const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 module.exports = {
   entry: {
     'content/index': './src/content/index.ts',
-    'popup/popup': './src/popup/popup.ts',
+    'background/background': './src/background/background.ts',
+    'panel/panel': './src/panel/panel.ts',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: '[name].js',
     clean: true,
+    publicPath: '/',
+    scriptType: 'text/javascript',
   },
   module: {
     rules: [
@@ -35,9 +38,8 @@ module.exports = {
     new CopyPlugin({
       patterns: [
         { from: 'manifest.json', to: 'manifest.json' },
-        { from: 'src/popup/popup.html', to: 'popup/popup.html' },
-        { from: 'src/popup/popup.css', to: 'popup/popup.css' },
         { from: 'src/overlay/overlay.css', to: 'overlay/overlay.css' },
+        { from: 'src/panel/panel.css', to: 'panel/panel.css' },
         { from: 'assets', to: 'assets' },
       ],
     }),

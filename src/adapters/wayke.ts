@@ -2,8 +2,9 @@
  * Data extractor for Wayke.se car listings
  */
 
-import { VehicleData, VehicleType } from '../types';
+import { VehicleData } from '../types';
 import { ESTIMATED_CONSUMPTION } from '../core/constants';
+import { inferVehicleType, buildVehicleName } from './shared';
 
 /**
  * Checks if current page is a Wayke.se car listing
@@ -55,6 +56,7 @@ export async function extractWaykeData(): Promise<VehicleData | null> {
     return {
       purchasePrice,
       fuelType,
+      fuelTypeLabel: specs.fuelTypeLabel,
       fuelConsumption,
       vehicleYear: specs.year,
       mileage: specs.mileage,
@@ -150,6 +152,7 @@ function extractPrice(): number | null {
  */
 function extractSpecs(): {
   fuelType: string | null;
+  fuelTypeLabel: string | null;
   fuelConsumption: number | null;
   year: number | null;
   mileage: number | null;
@@ -161,6 +164,7 @@ function extractSpecs(): {
 } {
   const specs = {
     fuelType: null as string | null,
+    fuelTypeLabel: null as string | null,
     fuelConsumption: null as number | null,
     year: null as number | null,
     mileage: null as number | null,
@@ -173,21 +177,76 @@ function extractSpecs(): {
 
   const pageText = document.body.innerText.toLowerCase();
 
-  // Extract fuel type
+  // Extract fuel type from spec tags/badges near the car info
+  // Wayke shows fuel type in small tag elements near the title
+  // Look for specific fuel type indicators in a targeted way
+
+  // Strategy 1: Find fuel type from the tags/badges section (most reliable)
+  const tagElements = document.querySelectorAll('[class*="tag"], [class*="badge"], [class*="chip"], [class*="label"], [class*="spec"]');
+  let fuelFromTags: string | null = null;
+  let fuelLabelFromTags: string | null = null;
+
+  // Fuel type patterns: { pattern, normalizedType, labelTransform }
   const fuelPatterns = [
-    { pattern: /\belbil\b|100%?\s*el\b/i, type: 'el' },
-    { pattern: /\bladdhybrid\b|plug-in\s*hybrid/i, type: 'laddhybrid' },
-    { pattern: /\belhybrid\b|\bmild\s*hybrid\b|\bhybrid\b/i, type: 'hybrid' },
-    { pattern: /\bdiesel\b/i, type: 'diesel' },
-    { pattern: /\bbensin\b/i, type: 'bensin' },
-    { pattern: /\be85\b|\betanol\b/i, type: 'e85' },
-    { pattern: /\bbiogas\b|\bgas\b/i, type: 'biogas' },
+    // Combinations first (more specific)
+    { pattern: /^e85\s*\+\s*el$/i, type: 'laddhybrid' },
+    { pattern: /^el\s*\+\s*naturgas$/i, type: 'el' },
+    { pattern: /^diesel\s*\+\s*el$/i, type: 'laddhybrid' },
+    { pattern: /^bensin\s*\+\s*el$/i, type: 'laddhybrid' },
+    { pattern: /^diesel\s*\+\s*naturgas$/i, type: 'diesel' },
+    { pattern: /^bensin\s*\+\s*naturgas$/i, type: 'bensin' },
+    // Single fuels
+    { pattern: /^diesel$|^drivmedel diesel$/i, type: 'diesel' },
+    { pattern: /^bensin$|^drivmedel bensin$/i, type: 'bensin' },
+    { pattern: /^el$|^elbil$|^drivmedel el$/i, type: 'el' },
+    { pattern: /^e85$|^etanol$/i, type: 'e85' },
+    { pattern: /^hybrid$|^elhybrid$/i, type: 'hybrid' },
+    { pattern: /^laddhybrid$|plug-in/i, type: 'laddhybrid' },
+    { pattern: /^fordonsgas$|^biogas$|^naturgas$|^cng$/i, type: 'gas' },
+    { pattern: /^hvo$|^hvo100$/i, type: 'hvo' },
   ];
 
-  for (const { pattern, type } of fuelPatterns) {
-    if (pattern.test(pageText)) {
-      specs.fuelType = type;
-      break;
+  for (const tag of tagElements) {
+    const text = tag.textContent?.trim() || '';
+    const textLower = text.toLowerCase();
+
+    for (const { pattern, type } of fuelPatterns) {
+      if (pattern.test(textLower)) {
+        fuelFromTags = type;
+        // Capitalize first letter of each word for display
+        fuelLabelFromTags = text.split(/\s*\+\s*/).map(word =>
+          word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+        ).join('+');
+        break;
+      }
+    }
+    if (fuelFromTags) break;
+  }
+
+  if (fuelFromTags) {
+    specs.fuelType = fuelFromTags;
+    specs.fuelTypeLabel = fuelLabelFromTags;
+    console.log('[Bilkostnadskalkyl] Wayke fuel from tags:', fuelFromTags, 'label:', fuelLabelFromTags);
+  } else {
+    // Strategy 2: Fallback to page text search (less reliable)
+    // Check for specific fuel mentions near car details
+    const singleFuelPatterns = [
+      { pattern: /\belbil\b/i, type: 'el' },
+      { pattern: /\bladdhybrid\b|plug-in\s*hybrid/i, type: 'laddhybrid' },
+      { pattern: /\belhybrid\b|\bmild\s*hybrid\b/i, type: 'hybrid' },
+      { pattern: /\bhvo\b|hvo100/i, type: 'hvo' },
+      { pattern: /\bdiesel\b/i, type: 'diesel' },
+      { pattern: /\bbensin\b/i, type: 'bensin' },
+      { pattern: /\be85\b|\betanol\b/i, type: 'e85' },
+      { pattern: /\bfordonsgas\b|\bbiogas\b|\bnaturgas\b|\bcng\b/i, type: 'gas' },
+    ];
+
+    for (const { pattern, type } of singleFuelPatterns) {
+      if (pattern.test(pageText)) {
+        specs.fuelType = type;
+        console.log('[Bilkostnadskalkyl] Wayke fuel from page text:', type);
+        break;
+      }
     }
   }
 
@@ -288,85 +347,6 @@ function extractSpecs(): {
   }
 
   return specs;
-}
-
-/**
- * Infers vehicle type based on brand, model, and power
- */
-function inferVehicleType(
-  model: string | null,
-  brand: string | null,
-  power: number | null
-): VehicleType {
-  const modelLower = (model || '').toLowerCase();
-  const brandLower = (brand || '').toLowerCase();
-
-  // Luxury brands
-  const luxuryBrands = ['porsche', 'bmw', 'mercedes', 'audi', 'lexus', 'jaguar', 'maserati', 'bentley', 'rolls'];
-  if (luxuryBrands.some(b => brandLower.includes(b))) {
-    return power && power > 300 ? 'luxury' : 'large';
-  }
-
-  // Large SUVs and vans
-  const largeModels = ['xc90', 'xc60', 'q7', 'q8', 'x5', 'x6', 'x7', 'gle', 'gls', 'cayenne', 'touareg', 'land cruiser'];
-  if (largeModels.some(m => modelLower.includes(m))) {
-    return 'large';
-  }
-
-  // Simple/small cars
-  const simpleModels = ['up', 'mii', 'citigo', 'aygo', 'c1', '108', 'twingo', 'smart', 'i10', 'picanto', 'spark'];
-  if (simpleModels.some(m => modelLower.includes(m))) {
-    return 'simple';
-  }
-
-  // Default based on power
-  if (power) {
-    if (power > 300) return 'large';
-    if (power < 100) return 'simple';
-  }
-
-  return 'normal';
-}
-
-/**
- * Builds a display-friendly vehicle name from extracted parts
- * Falls back to page title if parts are missing
- */
-function buildVehicleName(
-  brand: string | null,
-  model: string | null,
-  year: number | null
-): string | null {
-  // Try to build from extracted parts
-  if (brand && model) {
-    const capitalizedBrand = brand.charAt(0).toUpperCase() + brand.slice(1).toLowerCase();
-    const capitalizedModel = model.toUpperCase();
-    const yearStr = year ? ` ${year}` : '';
-    return `${capitalizedBrand} ${capitalizedModel}${yearStr}`;
-  }
-
-  // Fallback: try to get from page title
-  const title = document.title;
-  if (title) {
-    // Wayke titles are often like "Volvo XC60 (ABC123) - Wayke"
-    const cleaned = title.split(/[-|–]/)[0].trim();
-    // Remove registration number in parentheses
-    const withoutReg = cleaned.replace(/\s*\([A-Z0-9]+\)\s*/, ' ').trim();
-    if (withoutReg && withoutReg.length > 3 && withoutReg.length < 50) {
-      return withoutReg;
-    }
-  }
-
-  // Fallback: try h1
-  const h1 = document.querySelector('h1');
-  if (h1?.textContent) {
-    const h1Text = h1.textContent.trim();
-    if (h1Text.length > 3 && h1Text.length < 50) {
-      return h1Text;
-    }
-  }
-
-  return null;
 }
 
 /**

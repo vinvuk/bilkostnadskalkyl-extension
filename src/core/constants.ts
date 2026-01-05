@@ -12,6 +12,7 @@ export const FUEL_TYPES = [
   { value: 'hvo', label: 'HVO', unit: 'kr/l', defaultPrice: 25.0 },
   { value: 'e85', label: 'E85', unit: 'kr/l', defaultPrice: 14.5 },
   { value: 'biogas', label: 'Biogas', unit: 'kr/kg', defaultPrice: 32.0 },
+  { value: 'gas', label: 'Fordonsgas/CNG', unit: 'kr/kg', defaultPrice: 32.0 },
   { value: 'el', label: 'El', unit: 'kr/kWh', defaultPrice: 2.5 },
   { value: 'hybrid', label: 'Hybrid', unit: 'kr/l', defaultPrice: 18.5 },
   { value: 'laddhybrid', label: 'Laddhybrid', unit: 'kr/l', defaultPrice: 18.5 },
@@ -50,6 +51,7 @@ export const DEFAULT_TAX_BY_FUEL: Record<string, number> = {
   hvo: 2500,
   e85: 1800,
   biogas: 1500,
+  gas: 1500,  // Fordonsgas/CNG - same as biogas
 };
 
 /** Estimated fuel consumption when not available (l or kWh per mil) */
@@ -62,6 +64,7 @@ export const ESTIMATED_CONSUMPTION: Record<string, number> = {
   hvo: 0.6,
   e85: 0.9,
   biogas: 0.8,
+  gas: 0.8,  // Fordonsgas/CNG - kg/mil, similar to biogas
 };
 
 /** Default user preferences */

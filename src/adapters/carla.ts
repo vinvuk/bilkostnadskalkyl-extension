@@ -2,8 +2,9 @@
  * Data extractor for Carla.se car listings
  */
 
-import { VehicleData, VehicleType } from '../types';
+import { VehicleData } from '../types';
 import { ESTIMATED_CONSUMPTION } from '../core/constants';
+import { inferVehicleType, buildVehicleName } from './shared';
 
 /**
  * Checks if current page is a Carla.se car listing
@@ -55,6 +56,7 @@ export async function extractCarlaData(): Promise<VehicleData | null> {
     return {
       purchasePrice,
       fuelType,
+      fuelTypeLabel: specs.fuelTypeLabel,
       fuelConsumption,
       vehicleYear: specs.year,
       mileage: specs.mileage,
@@ -317,6 +319,7 @@ function extractPrice(): number | null {
  */
 function extractSpecs(): {
   fuelType: string | null;
+  fuelTypeLabel: string | null;
   fuelConsumption: number | null;
   year: number | null;
   mileage: number | null;
@@ -328,6 +331,7 @@ function extractSpecs(): {
 } {
   const specs = {
     fuelType: null as string | null,
+    fuelTypeLabel: null as string | null,
     fuelConsumption: null as number | null,
     year: null as number | null,
     mileage: null as number | null,
@@ -338,45 +342,53 @@ function extractSpecs(): {
     effectiveInterestRate: null as number | null,
   };
 
-  const pageText = document.body.innerText.toLowerCase();
+  const pageTextOriginal = document.body.innerText;
+  const pageText = pageTextOriginal.toLowerCase();
 
   // Extract fuel type - prioritize structured areas (breadcrumb, subtitle)
   // Carla shows fuel type in breadcrumb ("Elbil > Volvo > XC40") and subtitle ("Elbil · 8 984 mil · 2023")
 
-  // First, try to find the subtitle pattern "FuelType · mileage · year"
-  const subtitleMatch = pageText.match(/\b(elbil|laddhybrid|hybrid|diesel|bensin|el)\s*[·•]\s*\d/i);
+  // First, try to find the subtitle pattern "FuelType · mileage · year" (search original text for proper case)
+  const subtitleMatch = pageTextOriginal.match(/\b(Elbil|Laddhybrid|Hybrid|Diesel|Bensin|El)\s*[·•]\s*\d/i);
   if (subtitleMatch) {
-    const fuelText = subtitleMatch[1].toLowerCase();
+    const fuelTextOriginal = subtitleMatch[1];
+    const fuelText = fuelTextOriginal.toLowerCase();
     if (fuelText === 'elbil' || fuelText === 'el') {
       specs.fuelType = 'el';
+      specs.fuelTypeLabel = fuelTextOriginal;
     } else if (fuelText === 'laddhybrid') {
       specs.fuelType = 'laddhybrid';
+      specs.fuelTypeLabel = fuelTextOriginal;
     } else if (fuelText === 'hybrid') {
       specs.fuelType = 'hybrid';
+      specs.fuelTypeLabel = fuelTextOriginal;
     } else if (fuelText === 'diesel') {
       specs.fuelType = 'diesel';
+      specs.fuelTypeLabel = fuelTextOriginal;
     } else if (fuelText === 'bensin') {
       specs.fuelType = 'bensin';
+      specs.fuelTypeLabel = fuelTextOriginal;
     }
   }
 
   // Fallback to general pattern matching if not found in subtitle
   if (!specs.fuelType) {
     const fuelPatterns = [
-      { pattern: /elbil/i, type: 'el' },
-      { pattern: /laddhybrid/i, type: 'laddhybrid' },
-      { pattern: /plug-in\s*hybrid/i, type: 'laddhybrid' },
-      { pattern: /elhybrid|mild\s*hybrid/i, type: 'hybrid' },
-      { pattern: /\bel\b|electric|100%?\s*el/i, type: 'el' },
-      { pattern: /diesel/i, type: 'diesel' },
-      { pattern: /bensin/i, type: 'bensin' },
-      { pattern: /e85|etanol/i, type: 'e85' },
-      { pattern: /biogas|gas/i, type: 'biogas' },
+      { pattern: /elbil/i, type: 'el', label: 'Elbil' },
+      { pattern: /laddhybrid/i, type: 'laddhybrid', label: 'Laddhybrid' },
+      { pattern: /plug-in\s*hybrid/i, type: 'laddhybrid', label: 'Laddhybrid' },
+      { pattern: /elhybrid|mild\s*hybrid/i, type: 'hybrid', label: 'Hybrid' },
+      { pattern: /\bel\b|electric|100%?\s*el/i, type: 'el', label: 'El' },
+      { pattern: /diesel/i, type: 'diesel', label: 'Diesel' },
+      { pattern: /bensin/i, type: 'bensin', label: 'Bensin' },
+      { pattern: /e85|etanol/i, type: 'e85', label: 'E85' },
+      { pattern: /biogas|gas/i, type: 'biogas', label: 'Biogas' },
     ];
 
-    for (const { pattern, type } of fuelPatterns) {
+    for (const { pattern, type, label } of fuelPatterns) {
       if (pattern.test(pageText)) {
         specs.fuelType = type;
+        specs.fuelTypeLabel = label;
         break;
       }
     }
@@ -465,83 +477,6 @@ function extractSpecs(): {
   }
 
   return specs;
-}
-
-/**
- * Infers vehicle type based on brand, model, and power
- */
-function inferVehicleType(
-  model: string | null,
-  brand: string | null,
-  power: number | null
-): VehicleType {
-  const modelLower = (model || '').toLowerCase();
-  const brandLower = (brand || '').toLowerCase();
-
-  // Luxury brands
-  const luxuryBrands = ['porsche', 'bmw', 'mercedes', 'audi', 'lexus', 'jaguar', 'maserati', 'bentley', 'rolls'];
-  if (luxuryBrands.some(b => brandLower.includes(b))) {
-    return power && power > 300 ? 'luxury' : 'large';
-  }
-
-  // Large SUVs and vans
-  const largeModels = ['xc90', 'xc60', 'q7', 'q8', 'x5', 'x6', 'x7', 'gle', 'gls', 'cayenne', 'touareg', 'land cruiser'];
-  if (largeModels.some(m => modelLower.includes(m))) {
-    return 'large';
-  }
-
-  // Simple/small cars
-  const simpleModels = ['up', 'mii', 'citigo', 'aygo', 'c1', '108', 'twingo', 'smart', 'i10', 'picanto', 'spark'];
-  if (simpleModels.some(m => modelLower.includes(m))) {
-    return 'simple';
-  }
-
-  // Default based on power
-  if (power) {
-    if (power > 300) return 'large';
-    if (power < 100) return 'simple';
-  }
-
-  return 'normal';
-}
-
-/**
- * Builds a display-friendly vehicle name from extracted parts
- * Falls back to page title if parts are missing
- */
-function buildVehicleName(
-  brand: string | null,
-  model: string | null,
-  year: number | null
-): string | null {
-  // Try to build from extracted parts
-  if (brand && model) {
-    const capitalizedBrand = brand.charAt(0).toUpperCase() + brand.slice(1).toLowerCase();
-    const capitalizedModel = model.toUpperCase();
-    const yearStr = year ? ` ${year}` : '';
-    return `${capitalizedBrand} ${capitalizedModel}${yearStr}`;
-  }
-
-  // Fallback: try to get from page title
-  const title = document.title;
-  if (title) {
-    // Carla titles are often like "Volvo XC40 2023 - Carla" or similar
-    const cleaned = title.split(/[-|–]/)[0].trim();
-    if (cleaned && cleaned.length > 3 && cleaned.length < 50) {
-      return cleaned;
-    }
-  }
-
-  // Fallback: try h1
-  const h1 = document.querySelector('h1');
-  if (h1?.textContent) {
-    const h1Text = h1.textContent.trim();
-    if (h1Text.length > 3 && h1Text.length < 50) {
-      return h1Text;
-    }
-  }
-
-  return null;
 }
 
 /**
