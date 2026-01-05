@@ -2176,7 +2176,7 @@ export class CostOverlay {
             <h3>Underhåll</h3>
             <p>Baseras på fordonstyp och körsträcka:</p>
             <ul>
-              <li><strong>Liten bil:</strong> ~6 000 kr/år vid 1 500 mil</li>
+              <li><strong>Liten bil:</strong> ~5 000 kr/år vid 1 500 mil</li>
               <li><strong>Normal bil:</strong> ~8 000 kr/år vid 1 500 mil</li>
               <li><strong>Stor bil/SUV:</strong> ~12 000 kr/år vid 1 500 mil</li>
             </ul>
@@ -2199,9 +2199,9 @@ export class CostOverlay {
             <h3>Däck</h3>
             <p>Däckbyte vart 3-5 år beroende på körsträcka. Kostnaden baseras på fordonstyp:</p>
             <ul>
-              <li><strong>Liten bil:</strong> ~6 000 kr per byte</li>
-              <li><strong>Normal bil:</strong> ~8 000 kr per byte</li>
-              <li><strong>Stor bil/SUV:</strong> ~12 000 kr per byte</li>
+              <li><strong>Liten bil:</strong> ~4 000 kr per byte</li>
+              <li><strong>Normal bil:</strong> ~6 000 kr per byte</li>
+              <li><strong>Stor bil/SUV:</strong> ~10 000 kr per byte</li>
             </ul>
           </div>
 
