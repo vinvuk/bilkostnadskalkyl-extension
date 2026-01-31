@@ -1,6 +1,6 @@
 {
   "name": "bilkostnadskalkyl-extension",
-  "version": "1.0.0",
+  "version": "1.2.3",
   "description": "Chrome extension - Se totalkostnad direkt pa bilannonserna",
   "scripts": {
     "dev": "webpack --mode development --watch",

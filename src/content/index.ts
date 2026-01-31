@@ -3,6 +3,18 @@
  * Runs on supported car listing sites (Carla.se, Wayke.se, etc.)
  */
 
+// Prevent duplicate script execution (can happen in Safari)
+declare global {
+  interface Window {
+    __bilkostnadskalkylLoaded?: boolean;
+  }
+}
+
+if (window.__bilkostnadskalkylLoaded) {
+  throw new Error('[Bilkostnadskalkyl] Script already loaded, skipping duplicate initialization');
+}
+window.__bilkostnadskalkylLoaded = true;
+
 import { isCarlaListingPage, extractCarlaData, getOverlayAnchor as getCarlaAnchor } from '../adapters/carla';
 import { isWaykeListingPage, extractWaykeData, getWaykeOverlayAnchor } from '../adapters/wayke';
 import { isBlocketListingPage, extractBlocketData, getBlocketOverlayAnchor } from '../adapters/blocket';
@@ -52,6 +64,8 @@ let currentVehicleData: VehicleData | null = null;
 let currentAdapter: SiteAdapter | null = null;
 let lastProcessedUrl: string = '';
 let initInProgress: boolean = false;
+let urlPollingInterval: ReturnType<typeof setInterval> | null = null;
+let contentObserver: MutationObserver | null = null;
 
 /**
  * Detects which site adapter to use based on current page
@@ -100,17 +114,24 @@ async function init(retryCount: number = 0): Promise<void> {
   const currentUrl = location.href;
   console.log('[Bilkostnadskalkyl] init() called, retry:', retryCount, 'url:', currentUrl);
 
+  // Check if overlay already exists in DOM (prevents duplicates in Safari)
+  if (document.getElementById('bilkostnadskalkyl-overlay')) {
+    console.log('[Bilkostnadskalkyl] Overlay already exists in DOM, skipping duplicate');
+    return;
+  }
+
   // Prevent duplicate initialization for same URL
   if (currentUrl === lastProcessedUrl && currentOverlay) {
     console.log('[Bilkostnadskalkyl] Skipping init - already processed this URL');
     return;
   }
 
-  // Prevent concurrent initialization
+  // Prevent concurrent initialization - set flag IMMEDIATELY to prevent race condition
   if (initInProgress) {
     console.log('[Bilkostnadskalkyl] Skipping init - already in progress');
     return;
   }
+  initInProgress = true;
 
   // Detect which site we're on
   const adapter = detectSiteAdapter();
@@ -118,11 +139,10 @@ async function init(retryCount: number = 0): Promise<void> {
     console.log('[Bilkostnadskalkyl] No adapter detected for this page');
     cleanup();
     lastProcessedUrl = '';
+    initInProgress = false;
     return;
   }
   console.log('[Bilkostnadskalkyl] Detected adapter:', adapter.name);
-
-  initInProgress = true;
   currentAdapter = adapter;
 
   try {
@@ -177,7 +197,7 @@ async function init(retryCount: number = 0): Promise<void> {
     currentAdapter = adapter;
 
     // Create and inject new overlay
-    currentOverlay = new CostOverlay(costs, vehicleData, preferences, anchor);
+    currentOverlay = new CostOverlay(costs, vehicleData, preferences, anchor, adapter.name);
     lastProcessedUrl = currentUrl;
 
     // Save to history (async, don't await to not block UI)
@@ -254,9 +274,14 @@ window.addEventListener('popstate', () => {
  * Starts polling and initial setup once DOM is ready
  */
 function startWhenReady(): void {
+  // Clear any existing interval to prevent duplicates
+  if (urlPollingInterval) {
+    clearInterval(urlPollingInterval);
+  }
+
   // Fallback: Poll for URL changes every 500ms (more aggressive for SPAs)
   let lastKnownUrl = location.href;
-  setInterval(() => {
+  urlPollingInterval = setInterval(() => {
     if (location.href !== lastKnownUrl) {
       console.log('[Bilkostnadskalkyl] URL change detected via polling:', lastKnownUrl, '->', location.href);
       lastKnownUrl = location.href;
@@ -321,17 +346,22 @@ function setupContentObserver(): void {
     }
   };
 
+  // Disconnect existing observer to prevent duplicates
+  if (contentObserver) {
+    contentObserver.disconnect();
+  }
+
   // Observe DOM changes
-  const observer = new MutationObserver(() => {
+  contentObserver = new MutationObserver(() => {
     checkForNewContent();
   });
 
   // Start observing once DOM is ready
   if (document.body) {
-    observer.observe(document.body, { childList: true, subtree: true });
+    contentObserver.observe(document.body, { childList: true, subtree: true });
   } else {
     document.addEventListener('DOMContentLoaded', () => {
-      observer.observe(document.body, { childList: true, subtree: true });
+      contentObserver?.observe(document.body, { childList: true, subtree: true });
     });
   }
 }

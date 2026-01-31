@@ -4,9 +4,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { calculateCosts } from './calculator';
+import { calculateCosts, getDepreciationRateForAge } from './calculator';
 import { CalculatorInput } from '../types';
-import { DEPRECIATION_RATES, MAINTENANCE_COSTS, TIRE_COSTS } from './constants';
+import { MAINTENANCE_COSTS, TIRE_COSTS, AGE_DEPRECIATION_CURVE, FUEL_DEPRECIATION_MULTIPLIERS, DEPRECIATION_OVERRIDE_FACTORS } from './constants';
 
 /**
  * Creates a default test input with sensible values
@@ -27,6 +27,7 @@ function createTestInput(overrides: Partial<CalculatorInput> = {}): CalculatorIn
     vehicleType: 'normal',
     maintenanceLevel: 'normal',
     depreciationRate: 'normal',
+    vehicleAge: 3,
     ownershipYears: 5,
     insurance: 500, // monthly
     parking: 0, // monthly
@@ -38,6 +39,10 @@ function createTestInput(overrides: Partial<CalculatorInput> = {}): CalculatorIn
     interestRate: 5.0,
     loanYears: 3,
     monthlyAdminFee: 60,
+    leasingType: 'private',
+    monthlyLeasingFee: 3500,
+    leasingIncludesInsurance: false,
+    washingCare: 250, // monthly
     annualTax: 2000,
     hasMalusTax: false,
     malusTaxAmount: 0,
@@ -181,17 +186,81 @@ describe('Fuel Cost Calculations', () => {
 });
 
 // ============================================================================
-// DEPRECIATION CALCULATION TESTS
+// DEPRECIATION CALCULATION TESTS (Age-based + Fuel-type-aware model)
 // ============================================================================
+
+/**
+ * Helper: computes expected depreciation using the age-based model
+ * Mirrors the logic in calculateCosts for verification
+ */
+function computeExpectedDepreciation(
+  purchasePrice: number,
+  vehicleAge: number | null,
+  fuelType: string,
+  depreciationRate: 'low' | 'normal' | 'high',
+  ownershipYears: number
+): number {
+  const fuelMult = FUEL_DEPRECIATION_MULTIPLIERS[fuelType] ?? 1.0;
+  const overrideFact = DEPRECIATION_OVERRIDE_FACTORS[depreciationRate];
+  const startAge = vehicleAge ?? 0;
+
+  let totalDep = 0;
+  let currentValue = purchasePrice;
+  for (let year = 0; year < ownershipYears; year++) {
+    const baseRate = getDepreciationRateForAge(startAge + year);
+    const effectiveRate = Math.min(1, Math.max(0, baseRate * fuelMult * overrideFact));
+    const yearDep = currentValue * effectiveRate;
+    totalDep += yearDep;
+    currentValue -= yearDep;
+  }
+  return Math.round(ownershipYears > 0 ? totalDep / ownershipYears : 0);
+}
+
+describe('getDepreciationRateForAge', () => {
+  it('should return 25% for age 0 (brand new)', () => {
+    expect(getDepreciationRateForAge(0)).toBe(0.25);
+  });
+
+  it('should return 15% for age 1', () => {
+    expect(getDepreciationRateForAge(1)).toBe(0.15);
+  });
+
+  it('should return 15% for age 2', () => {
+    expect(getDepreciationRateForAge(2)).toBe(0.15);
+  });
+
+  it('should return 10% for age 3', () => {
+    expect(getDepreciationRateForAge(3)).toBe(0.10);
+  });
+
+  it('should return 10% for age 4', () => {
+    expect(getDepreciationRateForAge(4)).toBe(0.10);
+  });
+
+  it('should return 6% for age 5', () => {
+    expect(getDepreciationRateForAge(5)).toBe(0.06);
+  });
+
+  it('should return 6% for age 7', () => {
+    expect(getDepreciationRateForAge(7)).toBe(0.06);
+  });
+
+  it('should return 4% for age 8', () => {
+    expect(getDepreciationRateForAge(8)).toBe(0.04);
+  });
+
+  it('should return 4% for age 15 (very old)', () => {
+    expect(getDepreciationRateForAge(15)).toBe(0.04);
+  });
+
+  it('should return 4% for age 30 (extremely old)', () => {
+    expect(getDepreciationRateForAge(30)).toBe(0.04);
+  });
+});
+
 describe('Depreciation Calculations', () => {
   it('should calculate normal depreciation over 5 years', () => {
-    // Year 1: 300000 × 0.15 = 45000, remaining = 255000
-    // Year 2: 255000 × 0.12 = 30600, remaining = 224400
-    // Year 3: 224400 × 0.12 = 26928, remaining = 197472
-    // Year 4: 197472 × 0.12 = 23696.64, remaining = 173775.36
-    // Year 5: 173775.36 × 0.12 = 20853.0432
-    // Total: 45000 + 30600 + 26928 + 23696.64 + 20853.0432 = 147077.6832
-    // Annual: 147077.6832 / 5 = 29415.53664, rounded = 29416
+    // vehicleAge=3, bensin (0.75), normal (1.0), 5 years
     const input = createTestInput({
       purchasePrice: 300000,
       depreciationRate: 'normal',
@@ -199,17 +268,11 @@ describe('Depreciation Calculations', () => {
     });
 
     const result = calculateCosts(input);
-    expect(result.depreciation).toBe(29416);
+    const expected = computeExpectedDepreciation(300000, 3, 'bensin', 'normal', 5);
+    expect(result.depreciation).toBe(expected);
   });
 
   it('should calculate low depreciation over 5 years', () => {
-    // Year 1: 300000 × 0.10 = 30000, remaining = 270000
-    // Year 2: 270000 × 0.08 = 21600, remaining = 248400
-    // Year 3: 248400 × 0.08 = 19872, remaining = 228528
-    // Year 4: 228528 × 0.08 = 18282.24, remaining = 210245.76
-    // Year 5: 210245.76 × 0.08 = 16819.6608
-    // Total: 30000 + 21600 + 19872 + 18282.24 + 16819.6608 = 106573.9008
-    // Annual: 106573.9008 / 5 = 21314.78016, rounded = 21315
     const input = createTestInput({
       purchasePrice: 300000,
       depreciationRate: 'low',
@@ -217,17 +280,11 @@ describe('Depreciation Calculations', () => {
     });
 
     const result = calculateCosts(input);
-    expect(result.depreciation).toBe(21315);
+    const expected = computeExpectedDepreciation(300000, 3, 'bensin', 'low', 5);
+    expect(result.depreciation).toBe(expected);
   });
 
   it('should calculate high depreciation over 5 years', () => {
-    // Year 1: 300000 × 0.20 = 60000, remaining = 240000
-    // Year 2: 240000 × 0.15 = 36000, remaining = 204000
-    // Year 3: 204000 × 0.15 = 30600, remaining = 173400
-    // Year 4: 173400 × 0.15 = 26010, remaining = 147390
-    // Year 5: 147390 × 0.15 = 22108.5
-    // Total: 60000 + 36000 + 30600 + 26010 + 22108.5 = 174718.5
-    // Annual: 174718.5 / 5 = 34943.7, rounded = 34944
     const input = createTestInput({
       purchasePrice: 300000,
       depreciationRate: 'high',
@@ -235,12 +292,13 @@ describe('Depreciation Calculations', () => {
     });
 
     const result = calculateCosts(input);
-    expect(result.depreciation).toBe(34944);
+    const expected = computeExpectedDepreciation(300000, 3, 'bensin', 'high', 5);
+    expect(result.depreciation).toBe(expected);
   });
 
   it('should calculate depreciation for 1 year ownership', () => {
-    // Only year 1 rate applies
-    // 300000 × 0.15 = 45000
+    // vehicleAge=3, bensin, normal -> age 3 bracket (10%), fuel 0.75 -> 7.5%
+    // 300000 * 0.075 = 22500
     const input = createTestInput({
       purchasePrice: 300000,
       depreciationRate: 'normal',
@@ -248,11 +306,10 @@ describe('Depreciation Calculations', () => {
     });
 
     const result = calculateCosts(input);
-    expect(result.depreciation).toBe(45000);
+    expect(result.depreciation).toBe(22500);
   });
 
   it('should calculate depreciation for 10 year ownership', () => {
-    // Year 1 uses 15%, years 2-10 use 12%
     const input = createTestInput({
       purchasePrice: 300000,
       depreciationRate: 'normal',
@@ -260,19 +317,8 @@ describe('Depreciation Calculations', () => {
     });
 
     const result = calculateCosts(input);
-
-    // Manual calculation
-    let currentValue = 300000;
-    let totalDep = 0;
-    for (let year = 1; year <= 10; year++) {
-      const rate = year === 1 ? 0.15 : 0.12;
-      const yearDep = currentValue * rate;
-      totalDep += yearDep;
-      currentValue -= yearDep;
-    }
-    const expectedAnnual = Math.round(totalDep / 10);
-
-    expect(result.depreciation).toBe(expectedAnnual);
+    const expected = computeExpectedDepreciation(300000, 3, 'bensin', 'normal', 10);
+    expect(result.depreciation).toBe(expected);
   });
 
   it('should handle expensive vehicle (1,000,000 SEK)', () => {
@@ -283,19 +329,121 @@ describe('Depreciation Calculations', () => {
     });
 
     const result = calculateCosts(input);
+    const expected = computeExpectedDepreciation(1000000, 3, 'bensin', 'normal', 5);
+    expect(result.depreciation).toBe(expected);
+  });
+});
 
-    // Same calculation but with higher base
-    let currentValue = 1000000;
-    let totalDep = 0;
-    for (let year = 1; year <= 5; year++) {
-      const rate = year === 1 ? 0.15 : 0.12;
-      const yearDep = currentValue * rate;
-      totalDep += yearDep;
-      currentValue -= yearDep;
-    }
-    const expectedAnnual = Math.round(totalDep / 5);
+describe('Age-Based Depreciation Model', () => {
+  describe('Fuel type multipliers', () => {
+    it('should depreciate EV faster than diesel (same age)', () => {
+      const evInput = createTestInput({ primaryFuelType: 'el', vehicleAge: 3 });
+      const dieselInput = createTestInput({ primaryFuelType: 'diesel', vehicleAge: 3 });
+      expect(calculateCosts(evInput).depreciation).toBeGreaterThan(calculateCosts(dieselInput).depreciation);
+    });
 
-    expect(result.depreciation).toBe(expectedAnnual);
+    it('should depreciate bensin slower than diesel', () => {
+      const bensinInput = createTestInput({ primaryFuelType: 'bensin', vehicleAge: 3 });
+      const dieselInput = createTestInput({ primaryFuelType: 'diesel', vehicleAge: 3 });
+      expect(calculateCosts(bensinInput).depreciation).toBeLessThan(calculateCosts(dieselInput).depreciation);
+    });
+
+    it('should handle unknown fuel type with multiplier 1.0', () => {
+      const unknownInput = createTestInput({ primaryFuelType: 'unknown_fuel', vehicleAge: 3 });
+      const dieselInput = createTestInput({ primaryFuelType: 'diesel', vehicleAge: 3 });
+      // Unknown defaults to 1.0 = same as diesel
+      expect(calculateCosts(unknownInput).depreciation).toBe(calculateCosts(dieselInput).depreciation);
+    });
+  });
+
+  describe('Vehicle age at purchase', () => {
+    it('should start new car (age 0) at 25% base rate', () => {
+      // Diesel multiplier 1.0, normal override 1.0: 400000 * 0.25 = 100000
+      const input = createTestInput({
+        vehicleAge: 0, ownershipYears: 1, purchasePrice: 400000, primaryFuelType: 'diesel',
+      });
+      expect(calculateCosts(input).depreciation).toBe(100000);
+    });
+
+    it('should start 4-year-old car at 10% bracket', () => {
+      // age 4 -> bracket 3-5 -> 10%, diesel*1.0, normal*1.0 => 200000 * 0.10 = 20000
+      const input = createTestInput({
+        vehicleAge: 4, ownershipYears: 1, purchasePrice: 200000, primaryFuelType: 'diesel',
+      });
+      expect(calculateCosts(input).depreciation).toBe(20000);
+    });
+
+    it('should start 10-year-old car at 4% bracket', () => {
+      // age 10 -> bracket 8+ -> 4%, diesel*1.0 => 100000 * 0.04 = 4000
+      const input = createTestInput({
+        vehicleAge: 10, ownershipYears: 1, purchasePrice: 100000, primaryFuelType: 'diesel',
+      });
+      expect(calculateCosts(input).depreciation).toBe(4000);
+    });
+
+    it('should handle null vehicleAge as age 0 (fallback)', () => {
+      const nullAge = createTestInput({ vehicleAge: null, ownershipYears: 1, purchasePrice: 400000, primaryFuelType: 'diesel' });
+      const zeroAge = createTestInput({ vehicleAge: 0, ownershipYears: 1, purchasePrice: 400000, primaryFuelType: 'diesel' });
+      expect(calculateCosts(nullAge).depreciation).toBe(calculateCosts(zeroAge).depreciation);
+    });
+
+    it('should handle very old vehicle (20+ years) with minimal depreciation', () => {
+      // All years at 4% base * 0.75 bensin = 3% effective
+      const input = createTestInput({ vehicleAge: 20, ownershipYears: 5, purchasePrice: 50000, primaryFuelType: 'bensin' });
+      const result = calculateCosts(input);
+      expect(result.depreciation).toBeLessThan(2000);
+      expect(result.depreciation).toBeGreaterThan(0);
+    });
+  });
+
+  describe('User override interaction', () => {
+    it('low override should reduce depreciation', () => {
+      const normalResult = calculateCosts(createTestInput({ depreciationRate: 'normal', vehicleAge: 3 }));
+      const lowResult = calculateCosts(createTestInput({ depreciationRate: 'low', vehicleAge: 3 }));
+      expect(lowResult.depreciation).toBeLessThan(normalResult.depreciation);
+    });
+
+    it('high override should increase depreciation', () => {
+      const normalResult = calculateCosts(createTestInput({ depreciationRate: 'normal', vehicleAge: 3 }));
+      const highResult = calculateCosts(createTestInput({ depreciationRate: 'high', vehicleAge: 3 }));
+      expect(highResult.depreciation).toBeGreaterThan(normalResult.depreciation);
+    });
+
+    it('combined high override + EV should give highest depreciation', () => {
+      // 0.25 * 1.25 * 1.30 = 0.40625 => 500000 * 0.40625 = 203125
+      const input = createTestInput({
+        depreciationRate: 'high', primaryFuelType: 'el', vehicleAge: 0, ownershipYears: 1, purchasePrice: 500000,
+      });
+      expect(calculateCosts(input).depreciation).toBe(203125);
+    });
+  });
+
+  describe('Bracket transitions during ownership', () => {
+    it('should transition from 15% to 10% bracket when crossing age 3', () => {
+      // Car is age 2, owned 3 years, diesel (1.0), normal (1.0)
+      // Age 2: 15%, Age 3: 10%, Age 4: 10%
+      const input = createTestInput({
+        vehicleAge: 2, ownershipYears: 3, purchasePrice: 300000, primaryFuelType: 'diesel',
+      });
+      const result = calculateCosts(input);
+      // Year 0 (age 2): 300000 * 0.15 = 45000, rem 255000
+      // Year 1 (age 3): 255000 * 0.10 = 25500, rem 229500
+      // Year 2 (age 4): 229500 * 0.10 = 22950
+      // Total = 93450, annual = 31150
+      expect(result.depreciation).toBe(31150);
+    });
+
+    it('should transition from 10% to 6% bracket when crossing age 5', () => {
+      // Car is age 4, owned 2 years, diesel (1.0), normal (1.0)
+      const input = createTestInput({
+        vehicleAge: 4, ownershipYears: 2, purchasePrice: 200000, primaryFuelType: 'diesel',
+      });
+      const result = calculateCosts(input);
+      // Year 0 (age 4): 200000 * 0.10 = 20000, rem 180000
+      // Year 1 (age 5): 180000 * 0.06 = 10800
+      // Total = 30800, annual = 15400
+      expect(result.depreciation).toBe(15400);
+    });
   });
 });
 
@@ -796,7 +944,7 @@ describe('Total Calculations', () => {
     const result = calculateCosts(input);
 
     expect(result.fixedCosts).toBe(
-      result.tax + result.insurance + result.parking + result.financing + result.depreciation
+      result.tax + result.insurance + result.parking + result.washingCare + result.financing + result.depreciation
     );
   });
 
@@ -1337,12 +1485,7 @@ describe('Formula Verification', () => {
     });
 
     const result = calculateCosts(input);
-
-    // Manual: Year 1: 500000 * 0.15 = 75000, remaining = 425000
-    //         Year 2: 425000 * 0.12 = 51000, remaining = 374000
-    //         Year 3: 374000 * 0.12 = 44880
-    //         Total = 75000 + 51000 + 44880 = 170880
-    //         Annual = 170880 / 3 = 56960
-    expect(result.depreciation).toBe(56960);
+    const expected = computeExpectedDepreciation(500000, 3, 'bensin', 'normal', 3);
+    expect(result.depreciation).toBe(expected);
   });
 });

@@ -91,6 +91,12 @@ export async function extractBlocketData(): Promise<VehicleData | null> {
     // Build vehicle name from extracted data
     const vehicleName = buildVehicleName(specs.brand, specs.model, specs.year);
 
+    // Extract main image URL
+    const imageUrl = extractMainImageUrl();
+
+    // Extract registration number
+    const registrationNumber = extractRegistrationNumber();
+
     return {
       purchasePrice,
       fuelType,
@@ -102,13 +108,118 @@ export async function extractBlocketData(): Promise<VehicleData | null> {
       co2Emissions: specs.co2,
       vehicleType,
       vehicleName,
+      imageUrl,
+      registrationNumber,
       effectiveInterestRate: null, // Blocket doesn't show financing details
+      annualTax: specs.annualTax,
       isEstimated,
     };
   } catch (error) {
     console.error('[Bilkostnadskalkyl] Blocket extraction error:', error);
     return null;
   }
+}
+
+/**
+ * Extracts registration number from Blocket page
+ * @returns Registration number or null if not found
+ */
+function extractRegistrationNumber(): string | null {
+  // Swedish registration number patterns:
+  // Old format: ABC 123 or ABC123
+  // New format: ABC 12A or ABC12A
+  const regNumPattern = /^[A-Z]{3}\s?\d{2}[A-Z0-9]$/i;
+
+  // Strategy 1: Check advertising data JSON
+  const adData = extractAdvertisingData();
+  if (adData?.regNumber?.[0]) {
+    const regNum = adData.regNumber[0];
+    if (regNumPattern.test(regNum)) {
+      console.log('[Bilkostnadskalkyl] Found reg number from Blocket JSON:', regNum);
+      return regNum.toUpperCase().replace(/\s/g, '');
+    }
+  }
+
+  // Strategy 2: Look for "Registreringsnummer" or "Reg.nr" in page text
+  const pageText = document.body.innerText;
+  const patterns = [
+    /registreringsnummer[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i,
+    /reg\.?\s*nr[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i,
+    /regnr[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pageText.match(pattern);
+    if (match) {
+      console.log('[Bilkostnadskalkyl] Found reg number from Blocket text:', match[1]);
+      return match[1].toUpperCase().replace(/\s/g, '');
+    }
+  }
+
+  // Strategy 3: Look in script tags for JSON data
+  const scripts = document.querySelectorAll('script');
+  for (const script of scripts) {
+    const content = script.textContent || '';
+    const jsonMatch = content.match(/"(?:registreringsnummer|regNr|registrationNumber|regNumber)"[:\s]*"([A-Z]{3}\s?\d{2}[A-Z0-9])"/i);
+    if (jsonMatch) {
+      console.log('[Bilkostnadskalkyl] Found reg number from Blocket script:', jsonMatch[1]);
+      return jsonMatch[1].toUpperCase().replace(/\s/g, '');
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extracts the main image URL from Blocket listing
+ * @returns Image URL or null if not found
+ */
+function extractMainImageUrl(): string | null {
+  // Try to find main image in gallery
+  // Blocket typically uses picture elements or img tags in the gallery
+  const selectors = [
+    // Main gallery image
+    '[data-testid="image-gallery"] img',
+    '[data-testid="gallery"] img',
+    '.image-gallery img',
+    // Fallback to any large car image
+    'img[src*="images.blocket.se"]',
+    'img[src*="bytbil-prod"]',
+    // Picture source
+    'picture source[srcset*="images.blocket.se"]',
+  ];
+
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element) {
+      if (element.tagName === 'IMG') {
+        const src = (element as HTMLImageElement).src;
+        if (src && src.startsWith('http')) {
+          return src;
+        }
+      } else if (element.tagName === 'SOURCE') {
+        const srcset = (element as HTMLSourceElement).srcset;
+        if (srcset) {
+          // Extract first URL from srcset
+          const firstUrl = srcset.split(',')[0].split(' ')[0].trim();
+          if (firstUrl.startsWith('http')) {
+            return firstUrl;
+          }
+        }
+      }
+    }
+  }
+
+  // Try to find from og:image meta tag
+  const ogImage = document.querySelector('meta[property="og:image"]');
+  if (ogImage) {
+    const content = ogImage.getAttribute('content');
+    if (content && content.startsWith('http')) {
+      return content;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -149,10 +260,16 @@ async function waitForContent(): Promise<void> {
     }
 
     let resolved = false;
+    let innerTimeout: ReturnType<typeof setTimeout> | null = null;
+    let mainTimeout: ReturnType<typeof setTimeout> | null = null;
+
     const done = () => {
       if (!resolved) {
         resolved = true;
         observer.disconnect();
+        // Clear any pending timeouts to prevent memory leaks
+        if (innerTimeout) clearTimeout(innerTimeout);
+        if (mainTimeout) clearTimeout(mainTimeout);
         // Small delay after detection to ensure full load
         setTimeout(resolve, 200);
       }
@@ -168,18 +285,20 @@ async function waitForContent(): Promise<void> {
       // Fallback to text detection
       if (document.body.innerText.includes(' kr')) {
         // Give JSON a bit more time to load after text appears
-        setTimeout(() => {
-          if (!resolved) {
-            done();
-          }
-        }, 500);
+        if (!innerTimeout) {
+          innerTimeout = setTimeout(() => {
+            if (!resolved) {
+              done();
+            }
+          }, 500);
+        }
       }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
     // Timeout after 10 seconds (increased from 5)
-    setTimeout(() => {
+    mainTimeout = setTimeout(() => {
       if (!resolved) {
         console.warn('[Bilkostnadskalkyl] Blocket content load timeout');
         done();
@@ -319,6 +438,7 @@ function extractSpecs(): {
   co2: number | null;
   model: string | null;
   brand: string | null;
+  annualTax: number | null;
 } {
   const specs = {
     fuelType: null as string | null,
@@ -330,6 +450,7 @@ function extractSpecs(): {
     co2: null as number | null,
     model: null as string | null,
     brand: null as string | null,
+    annualTax: null as number | null,
   };
 
   // Strategy 1: Use structured JSON data (most reliable)
@@ -451,6 +572,28 @@ function extractSpecs(): {
     pageText.match(/CO2[:\s]*(\d+)\s*g/i);
   if (co2Match) {
     specs.co2 = parseInt(co2Match[1], 10);
+  }
+
+  // Extract annual vehicle tax (Fordonsskatt)
+  // Patterns: "Fordonsskatt 360 kr" or "Skatt: 1 234 kr/år" or "Fordonsskatt\n360 kr"
+  const taxPatterns = [
+    /fordonsskatt\s*[\n\r]?\s*([\d\s]+)\s*kr/i,
+    /fordonsskatt[:\s]*([\d\s]+)\s*kr/i,
+    /skatt[:\s]*([\d\s]+)\s*kr\s*(?:\/\s*år|per\s*år)?/i,
+    /årlig\s*skatt[:\s]*([\d\s]+)\s*kr/i,
+  ];
+  for (const pattern of taxPatterns) {
+    const taxMatch = pageText.match(pattern);
+    if (taxMatch) {
+      const taxStr = taxMatch[1].replace(/\s/g, '');
+      const tax = parseInt(taxStr, 10);
+      // Sanity check: annual tax should be between 0 and 50000 kr
+      if (tax >= 0 && tax <= 50000) {
+        specs.annualTax = tax;
+        console.log('[Bilkostnadskalkyl] Found vehicle tax:', tax, 'kr/year');
+        break;
+      }
+    }
   }
 
   // Extract fuel consumption if available (l/100km or l/mil)

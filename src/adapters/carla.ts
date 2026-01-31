@@ -53,6 +53,9 @@ export async function extractCarlaData(): Promise<VehicleData | null> {
     // Build vehicle name from extracted data or page title
     const vehicleName = buildVehicleName(specs.brand, specs.model, specs.year);
 
+    // Extract main image URL
+    const imageUrl = extractMainImageUrl();
+
     return {
       purchasePrice,
       fuelType,
@@ -64,13 +67,52 @@ export async function extractCarlaData(): Promise<VehicleData | null> {
       co2Emissions: specs.co2,
       vehicleType,
       vehicleName,
+      imageUrl,
+      registrationNumber: specs.registrationNumber,
       effectiveInterestRate: specs.effectiveInterestRate,
+      annualTax: null, // TODO: Extract from Carla if available
       isEstimated,
     };
   } catch (error) {
     console.error('[Bilkostnadskalkyl] Carla extraction error:', error);
     return null;
   }
+}
+
+/**
+ * Extracts the main image URL from Carla listing
+ * @returns Image URL or null if not found
+ */
+function extractMainImageUrl(): string | null {
+  // Carla typically uses img tags in their gallery
+  const selectors = [
+    // Main gallery image
+    '[data-testid="gallery-image"] img',
+    '.gallery img',
+    '.carousel img',
+    // Main vehicle image
+    'img[alt*="bil"]',
+    'img[src*="carla.se"]',
+    'img[src*="cloudinary"]',
+  ];
+
+  for (const selector of selectors) {
+    const img = document.querySelector(selector) as HTMLImageElement;
+    if (img?.src && img.src.startsWith('http')) {
+      return img.src;
+    }
+  }
+
+  // Try og:image meta tag
+  const ogImage = document.querySelector('meta[property="og:image"]');
+  if (ogImage) {
+    const content = ogImage.getAttribute('content');
+    if (content && content.startsWith('http')) {
+      return content;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -217,10 +259,11 @@ function getFontSize(element: Element): number {
 function extractPrice(): number | null {
   // Strategy 1: Find price elements in DOM, tracking font size for prominence
   const pricePattern = /^(\d{1,3}(?:[\s\u00a0]\d{3})+)\s*kr$/;
-  const allElements = document.querySelectorAll('*');
+  // Target common text-containing elements instead of all elements for performance
+  const textElements = document.querySelectorAll('span, p, div, h1, h2, h3, h4, strong, b, em, label, [class*="price"], [class*="Price"], [data-price]');
   const foundPrices: { price: number; isOldPrice: boolean; element: Element; fontSize: number }[] = [];
 
-  for (const el of allElements) {
+  for (const el of textElements) {
     // Only check leaf-ish nodes with direct text content
     if (el.childNodes.length <= 3 && el.textContent) {
       const text = el.textContent.trim();
@@ -317,6 +360,71 @@ function extractPrice(): number | null {
 /**
  * Extracts vehicle specifications from page
  */
+/**
+ * Extracts registration number from Carla page
+ * Carla shows this in the "Specifikationer" modal or in embedded JSON
+ * @returns Registration number or null if not found
+ */
+function extractRegistrationNumber(): string | null {
+  // Swedish registration number patterns:
+  // Old format: ABC 123 or ABC123
+  // New format: ABC 12A or ABC12A
+  const regNumPattern = /^[A-Z]{3}\s?\d{2}[A-Z0-9]$/i;
+
+  // Strategy 1: Look for "Registreringsnummer" label in the DOM
+  // Target common label elements for performance
+  const labelElements = document.querySelectorAll('span, label, dt, th, div, p, strong, b');
+  for (const el of labelElements) {
+    const text = el.textContent?.trim() || '';
+    if (text.toLowerCase() === 'registreringsnummer') {
+      // Found the label, look for the value in next sibling or parent's next child
+      const parent = el.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.children);
+        const labelIndex = siblings.indexOf(el as Element);
+        if (labelIndex >= 0 && labelIndex < siblings.length - 1) {
+          const valueEl = siblings[labelIndex + 1];
+          const value = valueEl?.textContent?.trim();
+          if (value && regNumPattern.test(value)) {
+            console.log('[Bilkostnadskalkyl] Found reg number from label sibling:', value);
+            return value.toUpperCase();
+          }
+        }
+        // Also check parent's text content for the pattern
+        const parentText = parent.textContent || '';
+        const match = parentText.match(/registreringsnummer\s*[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i);
+        if (match) {
+          console.log('[Bilkostnadskalkyl] Found reg number from parent text:', match[1]);
+          return match[1].toUpperCase().replace(/\s/g, '');
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Look in script tags for JSON data
+  const scripts = document.querySelectorAll('script');
+  for (const script of scripts) {
+    const content = script.textContent || '';
+    // Look for registration number in JSON-like structures
+    const jsonMatch = content.match(/"(?:registreringsnummer|regNr|registrationNumber|regNumber)"[:\s]*"([A-Z]{3}\s?\d{2}[A-Z0-9])"/i);
+    if (jsonMatch) {
+      console.log('[Bilkostnadskalkyl] Found reg number from JSON:', jsonMatch[1]);
+      return jsonMatch[1].toUpperCase().replace(/\s/g, '');
+    }
+  }
+
+  // Strategy 3: Search page text for patterns near "Registreringsnummer"
+  const pageText = document.body.innerText;
+  const textMatch = pageText.match(/registreringsnummer[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i);
+  if (textMatch) {
+    console.log('[Bilkostnadskalkyl] Found reg number from page text:', textMatch[1]);
+    return textMatch[1].toUpperCase().replace(/\s/g, '');
+  }
+
+  console.log('[Bilkostnadskalkyl] Registration number not found');
+  return null;
+}
+
 function extractSpecs(): {
   fuelType: string | null;
   fuelTypeLabel: string | null;
@@ -328,6 +436,7 @@ function extractSpecs(): {
   model: string | null;
   brand: string | null;
   effectiveInterestRate: number | null;
+  registrationNumber: string | null;
 } {
   const specs = {
     fuelType: null as string | null,
@@ -340,7 +449,11 @@ function extractSpecs(): {
     model: null as string | null,
     brand: null as string | null,
     effectiveInterestRate: null as number | null,
+    registrationNumber: null as string | null,
   };
+
+  // Extract registration number
+  specs.registrationNumber = extractRegistrationNumber();
 
   const pageTextOriginal = document.body.innerText;
   const pageText = pageTextOriginal.toLowerCase();
@@ -485,8 +598,9 @@ function extractSpecs(): {
  */
 export function getOverlayAnchor(): HTMLElement | null {
   // Strategy 1: Find elements containing price text (e.g., "311 900 kr")
-  const allElements = document.querySelectorAll('*');
-  for (const el of allElements) {
+  // Target common price-containing elements for performance
+  const priceElements = document.querySelectorAll('span, p, div, h1, h2, h3, h4, strong, [class*="price"], [class*="Price"]');
+  for (const el of priceElements) {
     // Look for elements that directly contain a price pattern
     if (el.childNodes.length <= 3 && el.textContent) {
       const text = el.textContent.trim();

@@ -3,8 +3,23 @@
  * Ported from bilkostnadskalkyl Next.js app
  */
 
-import { CalculatorInput, CostBreakdown, VehicleData, UserPreferences, LoanType } from '../types';
-import { DEPRECIATION_RATES, MAINTENANCE_COSTS, TIRE_COSTS, ESTIMATED_CONSUMPTION, DEFAULT_TAX_BY_FUEL } from './constants';
+import { CalculatorInput, CostBreakdown, VehicleData, UserPreferences, LoanType, LeasingType } from '../types';
+import { MAINTENANCE_COSTS, TIRE_COSTS, ESTIMATED_CONSUMPTION, DEFAULT_TAX_BY_FUEL, AGE_DEPRECIATION_CURVE, FUEL_DEPRECIATION_MULTIPLIERS, DEPRECIATION_OVERRIDE_FACTORS } from './constants';
+
+/**
+ * Returns the base annual depreciation rate for a vehicle of a given age
+ * Looks up the age in the AGE_DEPRECIATION_CURVE brackets
+ * @param age - Vehicle age in years at the start of the ownership year
+ * @returns Base depreciation rate as a fraction (e.g. 0.15 = 15%)
+ */
+export function getDepreciationRateForAge(age: number): number {
+  for (const bracket of AGE_DEPRECIATION_CURVE) {
+    if (age < bracket.maxAge) {
+      return bracket.rate;
+    }
+  }
+  return AGE_DEPRECIATION_CURVE[AGE_DEPRECIATION_CURVE.length - 1].rate;
+}
 
 /**
  * Calculates the total cost of vehicle ownership
@@ -30,19 +45,25 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
 
   const annualFuelCost = fuelCostPerKm * mileageKm;
 
-  // Depreciation calculation
-  const rates = DEPRECIATION_RATES[input.depreciationRate];
+  // Depreciation calculation — age-based + fuel-type-aware model
+  const fuelMultiplier = FUEL_DEPRECIATION_MULTIPLIERS[input.primaryFuelType] ?? 1.0;
+  const overrideFactor = DEPRECIATION_OVERRIDE_FACTORS[input.depreciationRate];
+  const startAge = input.vehicleAge ?? 0;
+
   let totalDepreciation = 0;
   let currentValue = input.purchasePrice;
 
-  for (let year = 1; year <= input.ownershipYears; year++) {
-    const rate = year === 1 ? rates.year1 : rates.yearN;
-    const yearDepreciation = currentValue * rate;
+  for (let year = 0; year < input.ownershipYears; year++) {
+    const baseRate = getDepreciationRateForAge(startAge + year);
+    const effectiveRate = Math.min(1, Math.max(0, baseRate * fuelMultiplier * overrideFactor));
+    const yearDepreciation = currentValue * effectiveRate;
     totalDepreciation += yearDepreciation;
     currentValue -= yearDepreciation;
   }
 
-  const annualDepreciation = totalDepreciation / input.ownershipYears;
+  const annualDepreciation = input.ownershipYears > 0
+    ? totalDepreciation / input.ownershipYears
+    : 0;
 
   // Tax
   const annualTax = input.annualTax + (input.hasMalusTax ? input.malusTaxAmount : 0);
@@ -58,18 +79,30 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
   if (input.annualTireCost !== undefined && input.annualTireCost > 0) {
     annualTireCost = input.annualTireCost;
   } else {
-    const tireReplacementYears = Math.max(2, Math.min(5, 60000 / mileageKm));
+    // Guard against division by zero - use max replacement years if no mileage
+    const tireReplacementYears = mileageKm > 0
+      ? Math.max(2, Math.min(5, 60000 / mileageKm))
+      : 5;
     annualTireCost = TIRE_COSTS[input.vehicleType] / tireReplacementYears;
   }
 
-  // Fixed costs (insurance and parking are monthly values, multiply by 12)
-  const annualInsurance = input.insurance * 12;
+  // Fixed costs (insurance, parking, washing are monthly values, multiply by 12)
+  // For leasing with included insurance, don't add insurance separately
+  const annualInsurance = (input.financingType === 'leasing' && input.leasingIncludesInsurance)
+    ? 0
+    : input.insurance * 12;
   const annualParking = input.parking * 12;
+  const annualWashingCare = input.washingCare * 12;
 
-  // Financing cost calculation - supports both loan types
+  // Financing cost calculation - supports loan, leasing, and cash
   let annualFinancing = 0;
   let monthlyLoanPayment = 0;
-  if (input.financingType === 'loan' && input.loanYears > 0) {
+
+  if (input.financingType === 'leasing') {
+    // Leasing: Use the manually entered monthly fee
+    monthlyLoanPayment = Math.round(input.monthlyLeasingFee);
+    annualFinancing = monthlyLoanPayment * 12;
+  } else if (input.financingType === 'loan' && input.loanYears > 0) {
     const monthlyRate = input.interestRate / 100 / 12;
     const numPayments = input.loanYears * 12;
 
@@ -89,7 +122,8 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
       const averageBalance = (loanPrincipal + residualValue) / 2;
       const monthlyInterest = averageBalance * monthlyRate;
 
-      monthlyLoanPayment = monthlyAmortization + monthlyInterest + input.monthlyAdminFee;
+      // Admin fee removed - already included in effective interest rate
+      monthlyLoanPayment = monthlyAmortization + monthlyInterest;
     } else {
       // Annuitetslån (traditional loan): Full payoff during loan term
       if (monthlyRate > 0) {
@@ -100,7 +134,7 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
         // 0% interest - just divide by number of payments
         monthlyLoanPayment = loanPrincipal / numPayments;
       }
-      monthlyLoanPayment += input.monthlyAdminFee;
+      // Admin fee removed - already included in effective interest rate
     }
 
     // Round monthly payment first, then calculate annual to ensure consistency
@@ -111,7 +145,7 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
 
   // Totals
   const variableCosts = annualFuelCost + annualMaintenance + annualTireCost;
-  const fixedCosts = annualTax + annualInsurance + annualParking + annualFinancing + annualDepreciation;
+  const fixedCosts = annualTax + annualInsurance + annualParking + annualWashingCare + annualFinancing + annualDepreciation;
   const totalAnnual = variableCosts + fixedCosts;
   const costPerMil = input.annualMileage > 0 ? totalAnnual / input.annualMileage : 0;
   const costPerKm = mileageKm > 0 ? totalAnnual / mileageKm : 0;
@@ -125,6 +159,7 @@ export function calculateCosts(input: CalculatorInput): CostBreakdown {
     tires: Math.round(annualTireCost),
     insurance: Math.round(annualInsurance),
     parking: Math.round(annualParking),
+    washingCare: Math.round(annualWashingCare),
     financing: annualFinancing, // Already calculated from rounded monthly
     monthlyLoanPayment: monthlyLoanPayment, // Already rounded
     variableCosts: Math.round(variableCosts),
@@ -151,14 +186,31 @@ export function createCalculatorInput(vehicle: VehicleData, prefs: UserPreferenc
   // Determine fuel price based on extracted fuel type
   const fuelType = normalizeFuelType(vehicle.fuelType);
 
-  // Get tax: use user preference if they've customized it, otherwise use fuel-type default
-  // We check if prefs.annualTax differs from the generic default (2000) to detect customization
+  // Get tax priority:
+  // 1. Use extracted tax from listing if available (most accurate)
+  // 2. Use user's customized preference if they've changed it from default
+  // 3. Fall back to fuel-type default estimate
   const defaultTaxForFuel = DEFAULT_TAX_BY_FUEL[fuelType] ?? 2000;
-  const annualTax = prefs.annualTax !== 2000 ? prefs.annualTax : defaultTaxForFuel;
+  let annualTax: number;
+  if (vehicle.annualTax !== null && vehicle.annualTax > 0) {
+    // Use extracted tax from the listing
+    annualTax = vehicle.annualTax;
+  } else if (prefs.annualTax !== 2000) {
+    // User has customized the tax
+    annualTax = prefs.annualTax;
+  } else {
+    // Fall back to fuel-type default
+    annualTax = defaultTaxForFuel;
+  }
 
   // For electric vehicles, use secondaryFuelPrice (electricity price) as primary
   const isElectric = fuelType === 'el';
   const primaryFuelPrice = isElectric ? prefs.secondaryFuelPrice : prefs.primaryFuelPrice;
+
+  // Compute vehicle age from year — null if extraction failed (triggers fallback in calculator)
+  const vehicleAge = vehicle.vehicleYear !== null
+    ? Math.max(0, new Date().getFullYear() - vehicle.vehicleYear)
+    : null;
 
   return {
     purchasePrice: vehicle.purchasePrice,
@@ -173,6 +225,7 @@ export function createCalculatorInput(vehicle: VehicleData, prefs: UserPreferenc
     vehicleType: vehicle.vehicleType,
     maintenanceLevel: prefs.maintenanceLevel,
     depreciationRate: prefs.depreciationRate,
+    vehicleAge,
     ownershipYears: prefs.ownershipYears,
     insurance: prefs.insurance,
     parking: prefs.parking,
@@ -184,6 +237,10 @@ export function createCalculatorInput(vehicle: VehicleData, prefs: UserPreferenc
     interestRate: prefs.interestRate ?? 5.0,
     loanYears: prefs.loanYears ?? 3,
     monthlyAdminFee: prefs.monthlyAdminFee ?? 60,
+    leasingType: prefs.leasingType ?? 'private',
+    monthlyLeasingFee: prefs.monthlyLeasingFee ?? 3500,
+    leasingIncludesInsurance: prefs.leasingIncludesInsurance ?? false,
+    washingCare: prefs.washingCare ?? 250,
     annualTax,
     hasMalusTax: prefs.hasMalusTax ?? false,
     malusTaxAmount: prefs.malusTaxAmount ?? 0,

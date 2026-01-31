@@ -14,7 +14,10 @@ export interface VehicleData {
   co2Emissions: number | null;
   vehicleType: VehicleType;
   vehicleName: string | null;  // e.g. "Volvo XC40 2023"
+  imageUrl: string | null;  // Main image URL for PDF export
+  registrationNumber: string | null;  // Swedish registration number (e.g., "ABC123")
   effectiveInterestRate: number | null;  // Extracted from listing if available
+  annualTax: number | null;  // Extracted vehicle tax from listing (kr/year)
   isEstimated: {
     fuelConsumption: boolean;
     vehicleType: boolean;
@@ -31,10 +34,13 @@ export type MaintenanceLevel = 'low' | 'normal' | 'high';
 export type DepreciationRate = 'low' | 'normal' | 'high';
 
 /** Financing type */
-export type FinancingType = 'cash' | 'loan';
+export type FinancingType = 'cash' | 'loan' | 'leasing';
 
 /** Loan calculation type */
 export type LoanType = 'residual' | 'annuity';
+
+/** Leasing type */
+export type LeasingType = 'private' | 'business';
 
 /** User preferences stored in Chrome storage */
 export interface UserPreferences {
@@ -59,6 +65,10 @@ export interface UserPreferences {
   interestRate: number;
   loanYears: number;
   monthlyAdminFee: number;  // Administrativ avgift per månad
+  leasingType: LeasingType;  // Privat- eller företagsleasing
+  monthlyLeasingFee: number;  // Månatlig leasingavgift
+  leasingIncludesInsurance: boolean;  // Om försäkring ingår i leasingavgiften
+  washingCare: number;  // Tvätt & skötsel per månad
   annualTax: number;
   hasMalusTax: boolean;
   malusTaxAmount: number;
@@ -80,6 +90,7 @@ export interface CalculatorInput {
   vehicleType: VehicleType;
   maintenanceLevel: MaintenanceLevel;
   depreciationRate: DepreciationRate;
+  vehicleAge: number | null;  // Age of vehicle at purchase (years), null if unknown
   ownershipYears: number;
   insurance: number;
   parking: number;
@@ -91,6 +102,10 @@ export interface CalculatorInput {
   interestRate: number;
   loanYears: number;
   monthlyAdminFee: number;
+  leasingType: LeasingType;
+  monthlyLeasingFee: number;
+  leasingIncludesInsurance: boolean;
+  washingCare: number;
   annualTax: number;
   hasMalusTax: boolean;
   malusTaxAmount: number;
@@ -106,6 +121,7 @@ export interface CostBreakdown {
   tires: number;
   insurance: number;
   parking: number;
+  washingCare: number;
   financing: number;
   monthlyLoanPayment: number;
   variableCosts: number;
@@ -130,6 +146,8 @@ export interface HistoryItem {
   fuelTypeLabel: string | null;
   vehicleYear: number | null;
   mileage: number | null;
+  imageUrl: string | null;  // Main image URL
+  registrationNumber: string | null;  // Swedish registration number
   monthlyTotal: number;
   costPerMil: number;
   timestamp: number;

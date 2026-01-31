@@ -378,6 +378,11 @@ const panelStyles = `
  * @returns The panel HTML string
  */
 function createPanelHTML(): string {
+  // Get version dynamically from manifest
+  const version = typeof chrome !== 'undefined' && chrome.runtime?.getManifest
+    ? chrome.runtime.getManifest().version
+    : '1.2.4';
+
   return `
     <div class="bkk-panel-container">
       <div class="bkk-panel">
@@ -459,7 +464,7 @@ function createPanelHTML(): string {
         </div>
 
         <footer class="bkk-panel-footer">
-          <span class="bkk-panel-version">v1.2.3</span>
+          <span class="bkk-panel-version">v${version}</span>
         </footer>
       </div>
     </div>

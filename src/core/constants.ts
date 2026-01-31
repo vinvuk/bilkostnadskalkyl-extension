@@ -3,7 +3,7 @@
  * Ported from bilkostnadskalkyl Next.js app
  */
 
-import { UserPreferences, VehicleType, MaintenanceLevel } from '../types';
+import { UserPreferences, VehicleType, MaintenanceLevel, DepreciationRate } from '../types';
 
 /** Fuel type definitions with default prices */
 export const FUEL_TYPES = [
@@ -18,12 +18,52 @@ export const FUEL_TYPES = [
   { value: 'laddhybrid', label: 'Laddhybrid', unit: 'kr/l', defaultPrice: 18.5 },
 ] as const;
 
-/** Depreciation rates by category */
+/** Depreciation rates by category (legacy — kept for reference) */
 export const DEPRECIATION_RATES = {
   low: { year1: 0.10, yearN: 0.08 },
   normal: { year1: 0.15, yearN: 0.12 },
   high: { year1: 0.20, yearN: 0.15 },
 } as const;
+
+/**
+ * Age-based depreciation curve
+ * Maps vehicle age brackets to annual depreciation rate (fraction of current value lost per year)
+ * Based on Swedish market data 2025-2026
+ */
+export const AGE_DEPRECIATION_CURVE: ReadonlyArray<{ readonly maxAge: number; readonly rate: number }> = [
+  { maxAge: 1, rate: 0.25 },        // Year 0→1: 25%
+  { maxAge: 3, rate: 0.15 },        // Year 1→3: 15%/year
+  { maxAge: 5, rate: 0.10 },        // Year 3→5: 10%/year
+  { maxAge: 8, rate: 0.06 },        // Year 5→8: 6%/year
+  { maxAge: Infinity, rate: 0.04 }, // Year 8+: 4%/year
+];
+
+/**
+ * Fuel type multipliers applied to the base age depreciation curve
+ * Values > 1.0 mean faster depreciation, < 1.0 mean slower
+ * Based on Swedish resale data: EVs lose more, petrol holds value better
+ */
+export const FUEL_DEPRECIATION_MULTIPLIERS: Readonly<Record<string, number>> = {
+  bensin: 0.75,
+  diesel: 1.00,
+  hybrid: 0.80,
+  laddhybrid: 0.90,
+  el: 1.25,
+  e85: 1.10,
+  biogas: 1.10,
+  gas: 1.10,
+  hvo: 1.00,
+};
+
+/**
+ * User override factors for the low/normal/high depreciation preference
+ * Applied as final multiplier on top of age + fuel model
+ */
+export const DEPRECIATION_OVERRIDE_FACTORS: Readonly<Record<DepreciationRate, number>> = {
+  low: 0.75,
+  normal: 1.00,
+  high: 1.30,
+};
 
 /** Maintenance costs by vehicle type and level (SEK/year at 1500 mil) */
 export const MAINTENANCE_COSTS: Record<VehicleType, Record<MaintenanceLevel, number>> = {
@@ -90,6 +130,10 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   interestRate: 5.0,  // Uppdaterad till mer realistisk ränta
   loanYears: 3,  // 3 år är vanligast för restvärdelån
   monthlyAdminFee: 60,  // Administrativ avgift per månad
+  leasingType: 'private',  // Privatleasing som standard
+  monthlyLeasingFee: 3500,  // Typisk leasingavgift för mellanklass
+  leasingIncludesInsurance: false,  // Försäkring ingår normalt inte
+  washingCare: 250,  // Tvätt & skötsel kr/mån
   annualTax: 2000,
   hasMalusTax: false,
   malusTaxAmount: 0,

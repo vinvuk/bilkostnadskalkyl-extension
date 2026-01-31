@@ -90,6 +90,8 @@ export async function saveToHistory(
       fuelTypeLabel: vehicleData.fuelTypeLabel,
       vehicleYear: vehicleData.vehicleYear,
       mileage: vehicleData.mileage,
+      imageUrl: vehicleData.imageUrl,
+      registrationNumber: vehicleData.registrationNumber,
       monthlyTotal: costs.monthlyTotal,
       costPerMil: costs.costPerMil,
       timestamp: Date.now(),

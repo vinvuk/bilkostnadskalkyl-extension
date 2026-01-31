@@ -11,9 +11,23 @@ import { inferVehicleType, buildVehicleName } from './shared';
  * @returns true if on a single car listing page
  */
 export function isWaykeListingPage(): boolean {
+  const hostname = window.location.hostname;
   const path = window.location.pathname;
-  // Match /objekt/{uuid}/{slug} pattern
-  return /^\/objekt\/[a-f0-9-]+\//.test(path);
+
+  // Check if we're on wayke.se
+  if (!hostname.includes('wayke.se')) {
+    return false;
+  }
+
+  // Match /objekt/{uuid}/{slug} pattern (case-insensitive)
+  const isObjektPage = /^\/objekt\/[a-f0-9-]+\//i.test(path);
+
+  // Also match /annons/ pattern if they use that
+  const isAnnonsPage = /^\/annons\//i.test(path);
+
+  console.log('[Bilkostnadskalkyl] Wayke detection:', { hostname, path, isObjektPage, isAnnonsPage });
+
+  return isObjektPage || isAnnonsPage;
 }
 
 /**
@@ -53,6 +67,12 @@ export async function extractWaykeData(): Promise<VehicleData | null> {
     // Build vehicle name from extracted data or page title
     const vehicleName = buildVehicleName(specs.brand, specs.model, specs.year);
 
+    // Extract main image URL
+    const imageUrl = extractMainImageUrl();
+
+    // Extract registration number
+    const registrationNumber = extractRegistrationNumber();
+
     return {
       purchasePrice,
       fuelType,
@@ -64,13 +84,91 @@ export async function extractWaykeData(): Promise<VehicleData | null> {
       co2Emissions: specs.co2,
       vehicleType,
       vehicleName,
+      imageUrl,
+      registrationNumber,
       effectiveInterestRate: specs.effectiveInterestRate,
+      annualTax: null, // TODO: Extract from Wayke if available
       isEstimated,
     };
   } catch (error) {
     console.error('[Bilkostnadskalkyl] Wayke extraction error:', error);
     return null;
   }
+}
+
+/**
+ * Extracts registration number from Wayke page
+ * @returns Registration number or null if not found
+ */
+function extractRegistrationNumber(): string | null {
+  // Swedish registration number patterns:
+  // Old format: ABC 123 or ABC123
+  // New format: ABC 12A or ABC12A
+
+  // Strategy 1: Look for "Registreringsnummer" or "Reg.nr" in page text
+  const pageText = document.body.innerText;
+  const patterns = [
+    /registreringsnummer[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i,
+    /reg\.?\s*nr[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i,
+    /regnr[:\s]*([A-Z]{3}\s?\d{2}[A-Z0-9])/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pageText.match(pattern);
+    if (match) {
+      console.log('[Bilkostnadskalkyl] Found reg number from Wayke text:', match[1]);
+      return match[1].toUpperCase().replace(/\s/g, '');
+    }
+  }
+
+  // Strategy 2: Look in script tags for JSON data
+  const scripts = document.querySelectorAll('script');
+  for (const script of scripts) {
+    const content = script.textContent || '';
+    const jsonMatch = content.match(/"(?:registreringsnummer|regNr|registrationNumber|regNumber)"[:\s]*"([A-Z]{3}\s?\d{2}[A-Z0-9])"/i);
+    if (jsonMatch) {
+      console.log('[Bilkostnadskalkyl] Found reg number from Wayke script:', jsonMatch[1]);
+      return jsonMatch[1].toUpperCase().replace(/\s/g, '');
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extracts the main image URL from Wayke listing
+ * @returns Image URL or null if not found
+ */
+function extractMainImageUrl(): string | null {
+  // Wayke uses various image containers
+  const selectors = [
+    // Main gallery image
+    '[data-testid="gallery"] img',
+    '.gallery-image img',
+    '.vehicle-image img',
+    // Main image
+    'img[src*="wayke"]',
+    'img[src*="cloudinary"]',
+    'img[src*="imgix"]',
+  ];
+
+  for (const selector of selectors) {
+    const img = document.querySelector(selector) as HTMLImageElement;
+    if (img?.src && img.src.startsWith('http')) {
+      return img.src;
+    }
+  }
+
+  // Try og:image meta tag
+  const ogImage = document.querySelector('meta[property="og:image"]');
+  if (ogImage) {
+    const content = ogImage.getAttribute('content');
+    if (content && content.startsWith('http')) {
+      return content;
+    }
+  }
+
+  return null;
 }
 
 /**

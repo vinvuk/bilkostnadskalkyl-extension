@@ -7,6 +7,7 @@ module.exports = {
     'content/index': './src/content/index.ts',
     'background/background': './src/background/background.ts',
     'panel/panel': './src/panel/panel.ts',
+    'popup/popup': './src/popup/popup.ts',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -40,6 +41,8 @@ module.exports = {
         { from: 'manifest.json', to: 'manifest.json' },
         { from: 'src/overlay/overlay.css', to: 'overlay/overlay.css' },
         { from: 'src/panel/panel.css', to: 'panel/panel.css' },
+        { from: 'src/popup/popup.html', to: 'popup/popup.html' },
+        { from: 'src/popup/popup.css', to: 'popup/popup.css' },
         { from: 'assets', to: 'assets' },
       ],
     }),

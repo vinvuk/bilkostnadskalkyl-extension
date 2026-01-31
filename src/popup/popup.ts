@@ -100,10 +100,10 @@ function renderHistoryItem(item: HistoryItem): string {
   const monthly = formatPrice(item.monthlyTotal);
   const perMil = formatPrice(item.costPerMil);
   const time = formatRelativeTime(item.timestamp);
-  const siteLabel = item.site.charAt(0).toUpperCase() + item.site.slice(1);
+  const siteLabel = escapeHtml(item.site.charAt(0).toUpperCase() + item.site.slice(1));
 
   return `
-    <a href="${item.url}" target="_blank" class="history-item" data-id="${item.id}">
+    <a href="${sanitizeUrl(item.url)}" target="_blank" class="history-item" data-id="${escapeHtml(item.id)}">
       <div class="history-item-header">
         <span class="history-item-name">${escapeHtml(name)}</span>
         <span class="history-item-site">${siteLabel}</span>
@@ -158,6 +158,25 @@ function escapeHtml(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+/**
+ * Sanitizes a URL to prevent javascript: and data: XSS attacks
+ * @param url - URL to sanitize
+ * @returns Sanitized URL or # if invalid
+ */
+function sanitizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // Only allow http and https protocols
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return escapeHtml(url);
+    }
+    return '#';
+  } catch {
+    // Invalid URL
+    return '#';
+  }
 }
 
 /**
