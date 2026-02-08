@@ -1,19 +1,21 @@
 # Bilkostnadskalkyl Chrome Extension
 
-Chrome-tillägg som visar totalkostnaden direkt på bilannonser från svenska bilsajter.
+Chrome-tillagg som visar totalkostnaden direkt pa bilannonser fran svenska bilsajter.
 
 ## Funktioner
 
-- **Automatisk kostnadsberäkning** — Ser direkt vad bilen kostar per månad
-- **Stöd för flera sajter** — Blocket, Wayke och Carla
-- **Detaljerad kostnadsfördelning** — Bränsle, värdeminskning, skatt, underhåll, däck, försäkring, parkering, tvätt & skötsel och finansiering
-- **Åldersbaserad värdeminskning** — Kurva justerad för bilens ålder, bränsletyp och användarens val (Låg/Normal/Hög)
-- **Finansieringsberäkning** — Kontant, restvärdelån, annuitetslån och leasing (privat/företag)
-- **PDF-export** — Exportera kostnadssammanställning med bilbild till PDF
-- **Historik** — Spara och jämför tidigare visade bilar
-- **Automatisk dataextraktion** — Pris, bränsletyp, fordonsskatt, registreringsnummer och effektiv ränta
+- **Automatisk kostnadsberakning** — Ser direkt vad bilen kostar per manad
+- **Stod for flera sajter** — Blocket, Wayke och Carla
+- **Detaljerad kostnadsfordelning** — Bransle, vardeminskning, skatt, underhall, dack, forsakring, parkering, tvatt & skotsel och finansiering
+- **Aldersbaserad vardeminskning** — Kurva justerad for bilens alder, bransletyp och anvandarens val (Lag/Normal/Hog)
+- **Finansieringsberakning** — Kontant, restvardelslan, annuitetslan och leasing (privat/foretag)
+- **PDF-export** — Exportera kostnadssammanstallning med bilbild till PDF
+- **Historik** — Spara och jamfor tidigare visade bilar
+- **Automatisk dataextraktion** — Pris, bransletyp, fordonsskatt, registreringsnummer och effektiv ranta
+- **Konto & inloggning** — Magic link-autentisering via dinbilkostnad.se med saker token exchange
+- **Datadelning** — Valfri synk av bilvisningar till molnet med GDPR-samtycke
 
-## Sajter som stöds
+## Sajter som stods
 
 | Sajt | URL |
 |------|-----|
@@ -29,19 +31,19 @@ Chrome-tillägg som visar totalkostnaden direkt på bilannonser från svenska bi
 # Installera dependencies
 npm install
 
-# Bygg för utveckling (med watch)
+# Bygg for utveckling (med watch)
 npm run dev
 
-# Bygg för produktion
+# Bygg for produktion
 npm run build
 ```
 
-### Ladda tillägget i Chrome
+### Ladda tillaget i Chrome
 
-1. Öppna `chrome://extensions/`
-2. Aktivera "Utvecklarläge"
+1. Oppna `chrome://extensions/`
+2. Aktivera "Utvecklarlage"
 3. Klicka "Ladda uppackad"
-4. Välj `dist`-mappen
+4. Valj `dist`-mappen
 
 ## Projektstruktur
 
@@ -51,82 +53,106 @@ src/
 │   ├── blocket.ts
 │   ├── carla.ts
 │   └── wayke.ts
-├── background/     # Service worker
+├── background/     # Service worker (auth callback, consent sync)
 ├── content/        # Content script entrypoint
-├── core/           # Beräkningslogik och konstanter
+├── core/           # Berakningslogik och konstanter
 │   ├── calculator.ts
 │   ├── calculator.test.ts
 │   ├── constants.ts
 │   └── fuelDetection.test.ts
-├── overlay/        # UI-overlay som visas på sidor
-├── panel/          # DevTools panel
-├── popup/          # Extension popup
+├── overlay/        # UI-overlay som visas pa sidor
+├── panel/          # Detaljpanel med alla kostnader
+├── popup/          # Extension popup (Om, Historik, Konto)
+│   ├── popup.ts
+│   ├── popup.html
+│   └── popup.css
 ├── storage/        # Chrome storage hantering
-│   ├── emailGate.ts
-│   ├── history.ts
-│   └── preferences.ts
+│   ├── auth.ts         # Autentisering + fetchWithTimeout
+│   ├── emailGate.ts    # Email gate (magic link-initiering)
+│   ├── history.ts      # Visningshistorik
+│   └── preferences.ts  # Anvandarprefenser
 └── types/          # TypeScript typedefinitioner
 ```
 
-## Kostnadsberäkning
+## Autentisering
 
-Kalkylatorn räknar ut följande kostnader:
+Tillaget stoder inloggning via dinbilkostnad.se med magic link:
 
-### Rörliga kostnader
-- **Bränsle** — Baserat på förbrukning, bränsletyp och årlig körsträcka. Laddhybrider viktas mellan bensin och el.
-- **Underhåll** — Skalat efter biltyp (enkel/normal/stor/lyx), underhållsnivå och körsträcka
-- **Däck** — Baserat på biltyp och däcklivslängd (~60 000 km)
+1. Anvandaren anger e-post i popup → magic link skickas
+2. Anvandaren klickar lanken → dinbilkostnad.se genererar en **exchange code**
+3. Anvandaren omdirigeras till `/auth/extension-callback?code=xxx`
+4. Background script fangar URL:en, POSTar koden till `/api/auth/exchange`
+5. Servern returnerar session-token → sparas i `chrome.storage.local`
+
+Exchange code-flodet sakerstarler att session-tokens aldrig exponeras i URL:er, webbhistorik eller serverloggar.
+
+### Sakerhet
+
+- **Scoped permissions** — `host_permissions` begransade till blocket.se, wayke.se, carla.se och dinbilkostnad.se
+- **Exakt URL-matchning** — Callback-URL valideras med exakt `pathname`-kontroll, inte `startsWith`
+- **Request timeouts** — Alla fetch-anrop anvander `fetchWithTimeout` (8s default) via AbortController
+- **authenticatedFetch** — Popup och background script anvander gemensam auth-wrapper
+- **web_accessible_resources** — Begransade till enbart bilsajterna, inte `<all_urls>`
+
+## Kostnadsberakning
+
+Kalkylatorn raknar ut foljande kostnader:
+
+### Rorliga kostnader
+- **Bransle** — Baserat pa forbrukning, bransletyp och arlig korstracka. Laddhybrider viktas mellan bensin och el.
+- **Underhall** — Skalat efter biltyp (enkel/normal/stor/lyx), underhallsniva och korstracka
+- **Dack** — Baserat pa biltyp och dacklivslangd (~60 000 km)
 
 ### Fasta kostnader
-- **Värdeminskning** — Åldersbaserad kurva (25%→15%→10%→6%→4%) justerad med bränsletypsfaktor och användarens val
-- **Skatt** — Fordonsskatt (extraheras automatiskt från annonser) med stöd för malusskatt
-- **Försäkring** — Månatlig kostnad
-- **Parkering** — Månatlig kostnad
-- **Tvätt & skötsel** — Månatlig kostnad
-- **Finansiering** — Lånebetalning eller leasingavgift
+- **Vardeminskning** — Aldersbaserad kurva (25%→15%→10%→6%→4%) justerad med bransletypsfaktor och anvandarens val
+- **Skatt** — Fordonsskatt (extraheras automatiskt fran annonser) med stod for malusskatt
+- **Forsakring** — Manatlig kostnad
+- **Parkering** — Manatlig kostnad
+- **Tvatt & skotsel** — Manatlig kostnad
+- **Finansiering** — Lanebetalning eller leasingavgift
 
-### Värdeminskning
+### Vardeminskning
 
-Modellen bygger på tre faktorer:
+Modellen bygger pa tre faktorer:
 
-1. **Ålderskurva** — Årlig värdeminskning baserad på bilens ålder:
-   | Ålder | Takt |
+1. **Alderskurva** — Arlig vardeminskning baserad pa bilens alder:
+   | Alder | Takt |
    |-------|------|
-   | 0–1 år | 25% |
-   | 1–3 år | 15% |
-   | 3–5 år | 10% |
-   | 5–8 år | 6% |
-   | 8+ år | 4% |
+   | 0-1 ar | 25% |
+   | 1-3 ar | 15% |
+   | 3-5 ar | 10% |
+   | 5-8 ar | 6% |
+   | 8+ ar | 4% |
 
-2. **Bränsletypsfaktor** — Justerar baserat på drivmedel (bensin ×0,75, diesel ×1,0, el ×1,25 m.fl.)
+2. **Bransletypsfaktor** — Justerar baserat pa drivmedel (bensin x0,75, diesel x1,0, el x1,25 m.fl.)
 
-3. **Användarjustering** — Låg (×0,75), Normal (×1,0), Hög (×1,3)
+3. **Anvandarjustering** — Lag (x0,75), Normal (x1,0), Hog (x1,3)
 
 ### Finansieringsalternativ
 
 **Kontant** — Ingen finansieringskostnad
 
-**Restvärdelån**
-- Lägre månatliga betalningar
-- Restvärde betalas vid periodens slut
+**Restvardelslan**
+- Lagre manatliga betalningar
+- Restvarde betalas vid periodens slut
 - Kontantinsats minimum 20%
 
-**Annuitetslån**
-- Fullständig avbetalning under låneperioden
-- Fast månatlig betalning
+**Annuitetslan**
+- Fullstandig avbetalning under laneperioden
+- Fast manatlig betalning
 - Kontantinsats minimum 20%
 
-**Leasing** (privat/företag)
-- Manuellt angiven månadsavgift
+**Leasing** (privat/foretag)
+- Manuellt angiven manadsavgift
 
-*Obs: Administrativ avgift är inkluderad i den effektiva räntan.*
+*Obs: Administrativ avgift ar inkluderad i den effektiva rantan.*
 
 ## Drivmedelstyper
 
 - Bensin
 - Diesel
 - El
-- Laddhybrid (dubbla bränslen)
+- Laddhybrid (dubbla branslen)
 - Hybrid/Elhybrid
 - E85/Etanol
 - Biogas
@@ -135,41 +161,54 @@ Modellen bygger på tre faktorer:
 
 | Kommando | Beskrivning |
 |----------|-------------|
-| `npm run dev` | Bygg med watch för utveckling |
-| `npm run build` | Bygg för produktion |
+| `npm run dev` | Bygg med watch for utveckling |
+| `npm run build` | Bygg for produktion |
 | `npm run clean` | Ta bort dist-mappen |
-| `npm run test` | Kör tester |
-| `npm run test:watch` | Kör tester med watch |
+| `npm run test` | Kor tester |
+| `npm run test:watch` | Kor tester med watch |
 
 ## Teknisk stack
 
 - TypeScript
 - Webpack
 - Chrome Extension Manifest V3
-- Vitest för testning
+- Vitest for testning
 
 ## Versionshistorik
 
+### v1.2.5
+- **Nytt:** Konto-flik i popup — inloggning, utloggning, e-postvisning
+- **Nytt:** Datadelnings-toggle med GDPR-samtycke i popup
+- **Nytt:** `fetchWithTimeout` utility (8s default) med AbortController
+- **Nytt:** `authenticatedFetch` wrapper for API-anrop
+- **Sakerhet:** `host_permissions` begransade fran `<all_urls>` till enbart bilsajter + dinbilkostnad.se
+- **Sakerhet:** `web_accessible_resources` begransade till enbart bilsajter
+- **Sakerhet:** Callback-URL valideras med exakt pathname-kontroll
+- **Sakerhet:** Exchange code-flode — session-tokens skickas aldrig i URL:er
+- **Fix:** Popup anvander `authenticatedFetch` istallet for ra `fetch`
+- **Fix:** Consent-toggle atergar vid fel och inaktiveras under synk
+- Borttagen: Keep-alive alarm (onodigt med MV3 event-driven service workers)
+- Borttagen: `alarms`-permission
+
 ### v1.2.4
-- **Nytt:** Åldersbaserad värdeminskning med bränsletypsjustering (ersätter statisk 3-nivåmodell)
-- **Nytt:** Dropdown för värdeminskningstakt (Låg/Normal/Hög) med info-tooltip
-- **Nytt:** Tvätt & skötsel som kostnadskategori
-- **Nytt:** Leasing-stöd (privatleasing/företagsleasing)
+- **Nytt:** Aldersbaserad vardeminskning med bransletypsjustering (ersatter statisk 3-nivamodell)
+- **Nytt:** Dropdown for vardeminskningtakt (Lag/Normal/Hog) med info-tooltip
+- **Nytt:** Tvatt & skotsel som kostnadskategori
+- **Nytt:** Leasing-stod (privatleasing/foretagsleasing)
 - **Nytt:** Malusskatt-toggle med manuellt belopp
-- **Nytt:** Email gate-system med visningsräknare
-- **Nytt:** Automatisk extraktion av fordonsskatt, registreringsnummer och effektiv ränta
-- **Nytt:** Content scripts återinjiceras vid installation/uppdatering
-- **Nytt:** Uppdaterad metodiksida ("Så här räknar vi") med fullständig modellbeskrivning
-- **Fix:** Service worker keep-alive för att förhindra att extension avaktiveras
-- **Fix:** Förbättrad elbilsdetektering — korrekt enhet (kr/kWh) visas nu
-- Borttagen: "Försäkring ingår i leasingavgiften"-checkbox
+- **Nytt:** Email gate-system med visningsraknare
+- **Nytt:** Automatisk extraktion av fordonsskatt, registreringsnummer och effektiv ranta
+- **Nytt:** Content scripts aterinjiceras vid installation/uppdatering
+- **Nytt:** Uppdaterad metodiksida ("Sa har raknar vi") med fullstandig modellbeskrivning
+- **Fix:** Forbattrad elbilsdetektering — korrekt enhet (kr/kWh) visas nu
+- Borttagen: "Forsakring ingar i leasingavgiften"-checkbox
 
 ### v1.2.3
 - Minimum kontantinsats satt till 20%
-- Administrativ avgift borttagen (inkluderad i effektiv ränta)
-- Bilbild läggs till i PDF-export
-- Bildextraktion för alla stödda sajter
+- Administrativ avgift borttagen (inkluderad i effektiv ranta)
+- Bilbild laggs till i PDF-export
+- Bildextraktion for alla stodda sajter
 
 ## Licens
 
-Proprietär - Alla rättigheter förbehållna.
+Proprietar - Alla rattigheter forbehallna.
