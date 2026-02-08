@@ -1,22 +1,10 @@
 /**
  * Background service worker for Bilkostnadskalkyl extension
- * Handles extension icon clicks and injects the info panel overlay
+ * Handles extension icon clicks, injects the info panel overlay,
+ * and monitors for auth callback from the landing page.
  */
-
-/**
- * Keep service worker alive using periodic alarms
- * This prevents Chrome from terminating the service worker after inactivity
- */
-const KEEP_ALIVE_ALARM = 'keepAlive';
-
-chrome.alarms.create(KEEP_ALIVE_ALARM, { periodInMinutes: 0.5 });
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === KEEP_ALIVE_ALARM) {
-    // Simple keep-alive ping - just log to keep the worker active
-    console.log('[Bilkostnadskalkyl BG] Keep-alive ping');
-  }
-});
+import { saveAuthState, clearAuthState, authenticatedFetch, fetchWithTimeout } from '../storage/auth';
+import { saveEmailGateState } from '../storage/emailGate';
 
 /**
  * Re-inject content scripts on extension install/update
@@ -107,7 +95,57 @@ async function injectPanelScript(tabId: number): Promise<void> {
   }
 }
 
-// Listen for messages from content scripts
+/**
+ * Monitor tabs for the extension auth callback URL.
+ * When the user completes the magic link flow, this detects the callback page,
+ * extracts the exchange code, exchanges it for a session token via POST, and stores it.
+ */
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !tab.url) return;
+
+  try {
+    const url = new URL(tab.url);
+    // Exact pathname match to prevent spoofing
+    if (url.origin !== 'https://dinbilkostnad.se' || url.pathname !== '/auth/extension-callback') {
+      return;
+    }
+
+    const code = url.searchParams.get('code');
+    if (!code) return;
+
+    // Exchange the code for a session token via secure POST
+    const res = await fetchWithTimeout('https://dinbilkostnad.se/api/auth/exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      await saveAuthState({
+        token: data.token,
+        email: data.email,
+        userId: data.userId,
+        authenticatedAt: Date.now(),
+      });
+      await saveEmailGateState({
+        isUnlocked: true,
+        email: data.email,
+        unlockedAt: Date.now(),
+      });
+
+      // Close the callback tab
+      chrome.tabs.remove(tabId);
+
+      // Notify any open popups that auth is complete
+      chrome.runtime.sendMessage({ action: 'authCompleted', user: data }).catch(() => {});
+    }
+  } catch (error) {
+    console.error('[Bilkostnadskalkyl BG] Auth callback error:', error);
+  }
+});
+
+// Listen for messages from content scripts and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'getHistory') {
     // Forward history request
@@ -115,5 +153,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(result.bkk_history || []);
     });
     return true; // Keep channel open for async response
+  }
+
+  if (message.action === 'syncConsent') {
+    // Sync a consent decision to the backend
+    authenticatedFetch('/api/consent', {
+      method: 'PUT',
+      body: JSON.stringify({
+        consentType: message.consentType,
+        granted: message.granted,
+        source: 'extension',
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => sendResponse({ success: true, data }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true; // async
+  }
+
+  if (message.action === 'logout') {
+    clearAuthState()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
   }
 });

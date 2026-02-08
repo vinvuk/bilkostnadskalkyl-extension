@@ -139,6 +139,34 @@ export async function getRemainingFreeViews(): Promise<number> {
 }
 
 /**
+ * Initiates the magic link authentication flow.
+ * Sends the email to the backend to get a magic link via email.
+ * @param email - The user's email address
+ * @returns Success status and optional error message
+ */
+export async function initiateLogin(
+  email: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { fetchWithTimeout } = await import('./auth');
+    const res = await fetchWithTimeout('https://dinbilkostnad.se/api/auth/send-magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), source: 'extension' }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || 'Något gick fel.' };
+    }
+    // Store email locally while waiting for verification
+    await saveEmailGateState({ email: email.trim() });
+    return { success: true };
+  } catch {
+    return { success: false, error: 'Kunde inte nå servern. Försök igen.' };
+  }
+}
+
+/**
  * Resets email gate state for testing
  * @returns Promise that resolves when state is reset
  */

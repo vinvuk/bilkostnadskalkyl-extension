@@ -32,6 +32,7 @@
         Historik
         <span class="tab-badge" id="historyBadge" style="display: none;">0</span>
       </button>
+      <button class="tab" data-tab="account">Konto</button>
     </nav>
 
     <!-- About Tab -->
@@ -82,6 +83,55 @@
         </svg>
         <p>Ingen historik ännu</p>
         <span>Besök bilannonser för att börja spara</span>
+      </div>
+    </main>
+
+    <!-- Account Tab -->
+    <main class="main tab-content" id="accountTab">
+      <!-- Logged out state -->
+      <div id="accountLoggedOut">
+        <section class="section about-intro">
+          <p class="about-description">
+            Logga in för att synka din bilhistorik och hantera ditt konto på dinbilkostnad.se.
+          </p>
+        </section>
+        <section class="section">
+          <div class="login-form">
+            <input type="email" id="loginEmail" placeholder="din@email.se" class="login-input">
+            <p class="login-error" id="loginError" style="display: none;"></p>
+            <button id="loginBtn" class="btn btn-primary login-btn">Skicka inloggningslänk</button>
+            <p class="login-hint" id="loginHint" style="display: none;">
+              Kolla din inkorg och klicka på länken för att logga in.
+            </p>
+          </div>
+        </section>
+      </div>
+      <!-- Logged in state -->
+      <div id="accountLoggedIn" style="display: none;">
+        <section class="section about-intro">
+          <p class="about-description">
+            Inloggad som <strong id="accountEmail"></strong>
+          </p>
+        </section>
+        <section class="section">
+          <h2 class="section-title">Datadelning</h2>
+          <div class="consent-toggle">
+            <label class="toggle-label">
+              <span>Dela bilsökningsdata</span>
+              <input type="checkbox" id="dataSharingToggle" class="toggle-input">
+              <span class="toggle-slider"></span>
+            </label>
+            <p class="consent-description">
+              Din data anonymiseras och delas med bilhandlare. Du kan ändra detta när som helst.
+            </p>
+          </div>
+        </section>
+        <section class="section">
+          <a href="https://dinbilkostnad.se/profil" target="_blank" class="btn btn-secondary profile-link">
+            Min profil på dinbilkostnad.se
+          </a>
+          <button id="logoutBtn" class="btn btn-secondary logout-btn">Logga ut</button>
+        </section>
       </div>
     </main>
 

@@ -1,12 +1,14 @@
 /**
  * Popup script for Bilkostnadskalkyl extension
- * Handles About info and History display
+ * Handles About info, History display, and Account management
  */
 
 import { HistoryItem } from '../types';
 import { loadHistory, clearHistory } from '../storage/history';
+import { loadAuthState, clearAuthState, authenticatedFetch } from '../storage/auth';
+import { initiateLogin } from '../storage/emailGate';
 
-let currentTab: 'about' | 'history' = 'about';
+let currentTab: 'about' | 'history' | 'account' = 'about';
 
 /**
  * Initializes the popup
@@ -14,6 +16,7 @@ let currentTab: 'about' | 'history' = 'about';
 async function init(): Promise<void> {
   attachEventListeners();
   await updateHistoryBadge();
+  await updateAccountTab();
 }
 
 /**
@@ -28,18 +31,42 @@ function attachEventListeners(): void {
   const tabs = document.querySelectorAll('.tab');
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      const tabName = tab.getAttribute('data-tab') as 'about' | 'history';
+      const tabName = tab.getAttribute('data-tab') as 'about' | 'history' | 'account';
       switchTab(tabName);
     });
   });
 
+  // Login button
+  const loginBtn = document.getElementById('loginBtn');
+  loginBtn?.addEventListener('click', handleLogin);
+
+  // Login email enter key
+  const loginEmail = document.getElementById('loginEmail') as HTMLInputElement;
+  loginEmail?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleLogin();
+  });
+
+  // Logout button
+  const logoutBtn = document.getElementById('logoutBtn');
+  logoutBtn?.addEventListener('click', handleLogout);
+
+  // Data sharing toggle
+  const dataSharingToggle = document.getElementById('dataSharingToggle') as HTMLInputElement;
+  dataSharingToggle?.addEventListener('change', handleDataSharingToggle);
+
+  // Listen for auth completion from background script
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'authCompleted') {
+      updateAccountTab();
+    }
+  });
 }
 
 /**
  * Switches between tabs
  * @param tabName - Name of the tab to switch to
  */
-async function switchTab(tabName: 'about' | 'history'): Promise<void> {
+async function switchTab(tabName: 'about' | 'history' | 'account'): Promise<void> {
   currentTab = tabName;
 
   // Update tab buttons
@@ -52,9 +79,11 @@ async function switchTab(tabName: 'about' | 'history'): Promise<void> {
   // Update tab content
   const aboutTab = document.getElementById('aboutTab');
   const historyTab = document.getElementById('historyTab');
+  const accountTab = document.getElementById('accountTab');
 
   if (aboutTab) aboutTab.classList.toggle('active', tabName === 'about');
   if (historyTab) historyTab.classList.toggle('active', tabName === 'history');
+  if (accountTab) accountTab.classList.toggle('active', tabName === 'account');
 
   // Update footer buttons
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
@@ -64,6 +93,122 @@ async function switchTab(tabName: 'about' | 'history'): Promise<void> {
   if (tabName === 'history') {
     await renderHistory();
   }
+
+  // Refresh account state when switching to account tab
+  if (tabName === 'account') {
+    await updateAccountTab();
+  }
+}
+
+/**
+ * Updates the account tab based on authentication state
+ */
+async function updateAccountTab(): Promise<void> {
+  const auth = await loadAuthState();
+  const loggedOut = document.getElementById('accountLoggedOut');
+  const loggedIn = document.getElementById('accountLoggedIn');
+  const emailDisplay = document.getElementById('accountEmail');
+
+  if (!loggedOut || !loggedIn) return;
+
+  if (auth.token && auth.email) {
+    loggedOut.style.display = 'none';
+    loggedIn.style.display = 'block';
+    if (emailDisplay) emailDisplay.textContent = auth.email;
+
+    // Fetch current data sharing consent
+    try {
+      const res = await authenticatedFetch('/api/consent');
+      if (res.ok) {
+        const data = await res.json();
+        const dataSharing = data.consents?.find(
+          (c: { type: string }) => c.type === 'data_sharing'
+        );
+        const toggle = document.getElementById('dataSharingToggle') as HTMLInputElement;
+        if (toggle && dataSharing) {
+          toggle.checked = dataSharing.granted;
+        }
+      }
+    } catch {
+      // Non-critical, ignore
+    }
+  } else {
+    loggedOut.style.display = 'block';
+    loggedIn.style.display = 'none';
+  }
+}
+
+/**
+ * Handles login button click — initiates magic link flow
+ */
+async function handleLogin(): Promise<void> {
+  const emailInput = document.getElementById('loginEmail') as HTMLInputElement;
+  const loginBtn = document.getElementById('loginBtn') as HTMLButtonElement;
+  const loginError = document.getElementById('loginError');
+  const loginHint = document.getElementById('loginHint');
+
+  if (!emailInput || !loginBtn) return;
+
+  const email = emailInput.value.trim();
+  if (!email || !email.includes('@')) {
+    if (loginError) {
+      loginError.textContent = 'Ange en giltig e-postadress.';
+      loginError.style.display = 'block';
+    }
+    return;
+  }
+
+  loginBtn.disabled = true;
+  loginBtn.textContent = 'Skickar...';
+  if (loginError) loginError.style.display = 'none';
+
+  const result = await initiateLogin(email);
+
+  if (result.success) {
+    if (loginHint) loginHint.style.display = 'block';
+    loginBtn.textContent = 'Länk skickad!';
+  } else {
+    if (loginError) {
+      loginError.textContent = result.error || 'Något gick fel.';
+      loginError.style.display = 'block';
+    }
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Skicka inloggningslänk';
+  }
+}
+
+/**
+ * Handles logout button click
+ */
+async function handleLogout(): Promise<void> {
+  await clearAuthState();
+  await updateAccountTab();
+}
+
+/**
+ * Handles data sharing toggle change
+ */
+async function handleDataSharingToggle(): Promise<void> {
+  const toggle = document.getElementById('dataSharingToggle') as HTMLInputElement;
+  if (!toggle) return;
+
+  const newValue = toggle.checked;
+  toggle.disabled = true;
+
+  chrome.runtime.sendMessage(
+    {
+      action: 'syncConsent',
+      consentType: 'data_sharing',
+      granted: newValue,
+    },
+    (response) => {
+      toggle.disabled = false;
+      if (!response?.success) {
+        // Revert toggle on failure
+        toggle.checked = !newValue;
+      }
+    }
+  );
 }
 
 /**

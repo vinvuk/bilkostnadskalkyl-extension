@@ -12,10 +12,16 @@
     "storage",
     "activeTab",
     "scripting",
-    "alarms"
+    "tabs"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://www.blocket.se/*",
+    "https://blocket.se/*",
+    "https://www.wayke.se/*",
+    "https://wayke.se/*",
+    "https://www.carla.se/*",
+    "https://carla.se/*",
+    "https://dinbilkostnad.se/*"
   ],
   "action": {
     "default_icon": {
@@ -45,7 +51,14 @@
   "web_accessible_resources": [
     {
       "resources": ["overlay/overlay.css", "assets/*", "panel/panel.js", "panel/panel.css", "*.js"],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "https://www.blocket.se/*",
+        "https://blocket.se/*",
+        "https://www.wayke.se/*",
+        "https://wayke.se/*",
+        "https://www.carla.se/*",
+        "https://carla.se/*"
+      ]
     }
   ]
 }
