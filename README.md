@@ -70,7 +70,8 @@ src/
 │   ├── auth.ts         # Autentisering + fetchWithTimeout
 │   ├── emailGate.ts    # Email gate (magic link-initiering)
 │   ├── history.ts      # Visningshistorik
-│   └── preferences.ts  # Anvandarprefenser
+│   ├── preferences.ts  # Anvandarprefenser
+│   └── syncManager.ts  # Synk av bilvisningar till backend
 └── types/          # TypeScript typedefinitioner
 ```
 
@@ -175,6 +176,14 @@ Modellen bygger pa tre faktorer:
 - Vitest for testning
 
 ## Versionshistorik
+
+### v1.3.0
+- **Nytt:** Automatisk synk av bilvisningar till backend via `syncManager.ts`
+- **Nytt:** Synk triggas efter varje bilvisning, vid inloggning, vid samtycke och var 30:e minut (Chrome Alarms)
+- **Nytt:** Kostnadsfordelning (bransle, vardeminskning, skatt, underhall, forsakring) sparas i historiken
+- **Andrat:** Email gate aktiverad — anvandare ombeds skapa konto efter 10 gratisvisningar
+- **Andrat:** `alarms`-permission aterinford for periodisk synk
+- **Fix:** HistoryItem utokad med kostnadsfalt for fullstandig backend-synk
 
 ### v1.2.5
 - **Nytt:** Konto-flik i popup — inloggning, utloggning, e-postvisning
