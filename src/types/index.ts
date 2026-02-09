@@ -151,4 +151,13 @@ export interface HistoryItem {
   monthlyTotal: number;
   costPerMil: number;
   timestamp: number;
+  // Extended fields for backend sync (optional for backward compat with existing history)
+  enginePower?: number | null;
+  vehicleType?: string | null;
+  fuelCost?: number | null;         // Annual fuel cost
+  depreciationCost?: number | null;  // Annual depreciation
+  taxCost?: number | null;           // Annual tax
+  maintenanceCost?: number | null;   // Annual maintenance
+  insuranceCost?: number | null;     // Annual insurance
+  syncedAt?: number | null;          // Timestamp of last successful sync
 }

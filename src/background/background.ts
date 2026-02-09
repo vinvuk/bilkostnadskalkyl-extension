@@ -5,6 +5,7 @@
  */
 import { saveAuthState, clearAuthState, authenticatedFetch, fetchWithTimeout } from '../storage/auth';
 import { saveEmailGateState } from '../storage/emailGate';
+import { syncHistory } from '../storage/syncManager';
 
 /**
  * Re-inject content scripts on extension install/update
@@ -40,6 +41,17 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         }
       }
     }
+  }
+});
+
+/**
+ * Periodic sync alarm — retries unsynced car views every 30 minutes.
+ * Handles cases where individual sync attempts failed (network, rate limit).
+ */
+chrome.alarms.create('syncCarViews', { periodInMinutes: 30 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'syncCarViews') {
+    syncHistory().catch(() => {});
   }
 });
 
@@ -139,6 +151,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
       // Notify any open popups that auth is complete
       chrome.runtime.sendMessage({ action: 'authCompleted', user: data }).catch(() => {});
+
+      // Trigger initial sync of any existing unsynced history
+      syncHistory().catch(() => {});
     }
   } catch (error) {
     console.error('[Bilkostnadskalkyl BG] Auth callback error:', error);
@@ -166,7 +181,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }),
     })
       .then((res) => res.json())
-      .then((data) => sendResponse({ success: true, data }))
+      .then((data) => {
+        // If data_sharing was just granted, trigger a car view sync
+        if (message.consentType === 'data_sharing' && message.granted) {
+          syncHistory().catch(() => {});
+        }
+        sendResponse({ success: true, data });
+      })
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true; // async
+  }
+
+  if (message.action === 'syncCarViews') {
+    // Sync unsynced car view history to the backend
+    syncHistory()
+      .then((result) => sendResponse({ success: true, ...(result || {}) }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true; // async
   }

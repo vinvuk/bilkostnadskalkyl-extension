@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilkostnadskalkyl",
-  "version": "1.2.5",
+  "version": "1.3.0",
   "description": "Se total agandekostnad direkt pa bilannonserna",
   "icons": {
     "16": "assets/icons/icon16.png",
@@ -12,7 +12,8 @@
     "storage",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.blocket.se/*",

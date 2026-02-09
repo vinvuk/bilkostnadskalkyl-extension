@@ -202,9 +202,14 @@ async function init(retryCount: number = 0): Promise<void> {
 
     // Save to history (async, don't await to not block UI)
     const siteName = getSiteName(adapter.name);
-    saveToHistory(vehicleData, costs, siteName, currentUrl).catch(err => {
-      console.warn('[Bilkostnadskalkyl] Failed to save to history:', err);
-    });
+    saveToHistory(vehicleData, costs, siteName, currentUrl)
+      .then(() => {
+        // Trigger background sync of unsynced car views
+        chrome.runtime.sendMessage({ action: 'syncCarViews' }).catch(() => {});
+      })
+      .catch(err => {
+        console.warn('[Bilkostnadskalkyl] Failed to save to history:', err);
+      });
   } finally {
     initInProgress = false;
   }

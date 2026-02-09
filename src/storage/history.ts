@@ -95,6 +95,14 @@ export async function saveToHistory(
       monthlyTotal: costs.monthlyTotal,
       costPerMil: costs.costPerMil,
       timestamp: Date.now(),
+      enginePower: vehicleData.enginePower,
+      vehicleType: vehicleData.vehicleType,
+      fuelCost: costs.fuel,
+      depreciationCost: costs.depreciation,
+      taxCost: costs.tax,
+      maintenanceCost: costs.maintenance,
+      insuranceCost: costs.insurance,
+      syncedAt: null,
     };
 
     // Remove existing entry if present (will be re-added at top)
