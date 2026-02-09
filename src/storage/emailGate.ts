@@ -4,7 +4,7 @@
  */
 
 const EMAIL_GATE_KEY = 'bilkostnadskalkyl_email_gate';
-const FREE_VIEWS_LIMIT = 99999; // Beta: unlimited views
+const FREE_VIEWS_LIMIT = 10;
 
 /**
  * Email gate state structure
