@@ -3,6 +3,8 @@
  * Uses chrome.storage.local for persistence across sessions
  */
 
+import { trackEvent } from '../analytics/tracker';
+
 const EMAIL_GATE_KEY = 'bilkostnadskalkyl_email_gate';
 const FREE_VIEWS_LIMIT = 10;
 
@@ -99,6 +101,12 @@ export async function incrementViewCount(): Promise<EmailGateState> {
     viewCount: current.viewCount + 1,
   };
   await saveEmailGateState(updated);
+
+  // Track view milestones to understand funnel reach
+  if (updated.viewCount === 5 || updated.viewCount === 10) {
+    trackEvent('ext_view_milestone', { viewCount: updated.viewCount });
+  }
+
   return updated;
 }
 

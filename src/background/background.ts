@@ -6,6 +6,10 @@
 import { saveAuthState, clearAuthState, authenticatedFetch, fetchWithTimeout } from '../storage/auth';
 import { saveEmailGateState } from '../storage/emailGate';
 import { syncHistory } from '../storage/syncManager';
+import { initTracker, trackEvent } from '../analytics/tracker';
+
+// Initialize anonymous tracker in service worker context
+initTracker();
 
 /**
  * Re-inject content scripts on extension install/update
@@ -145,6 +149,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         email: data.email,
         unlockedAt: Date.now(),
       });
+
+      // Track successful authentication
+      trackEvent('ext_auth_completed');
 
       // Close the callback tab
       chrome.tabs.remove(tabId);

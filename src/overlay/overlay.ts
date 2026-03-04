@@ -16,6 +16,7 @@ import {
   getFreeViewsLimit,
   EmailGateState,
 } from '../storage/emailGate';
+import { initTracker, trackEvent } from '../analytics/tracker';
 
 type ViewState = 'collapsed' | 'expanded' | 'methodology' | 'emailGate';
 
@@ -36,7 +37,13 @@ interface OverlayPosition {
 }
 
 const overlayStyles = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(chrome-extension://__MSG_@@extension_id__/assets/fonts/dm-sans.woff2) format('woff2');
+}
 
 :host {
   /* Solid colors - matching popup design */
@@ -2031,6 +2038,9 @@ export class CostOverlay {
     this.container.id = 'bilkostnadskalkyl-overlay';
     this.shadow = this.container.attachShadow({ mode: 'closed' });
 
+    // Initialize anonymous tracker
+    initTracker();
+
     // Load saved position and email gate state, then render
     this.loadPosition().then(async () => {
       this.applyPosition();
@@ -2044,6 +2054,12 @@ export class CostOverlay {
         console.error('[Bilkostnadskalkyl] Failed to check email gate:', error);
         this.isGateChecked = true;
       }
+
+      // Track that the overlay was shown on a car listing
+      trackEvent('ext_overlay_shown', {
+        site: this.siteName,
+        viewCount: this.emailGateState?.viewCount ?? 0,
+      });
 
       this.render();
       document.body.appendChild(this.container);
@@ -2104,6 +2120,9 @@ export class CostOverlay {
       if (!this.hasMoved) {
         // Check if email gate should be shown
         if (this.shouldShowGate()) {
+          trackEvent('ext_gate_shown', {
+            viewCount: this.emailGateState?.viewCount ?? 0,
+          });
           this.setViewState('emailGate');
         } else {
           this.setViewState('expanded');
@@ -2807,6 +2826,9 @@ export class CostOverlay {
     // Close button handler
     const closeBtn = this.shadow.querySelector('[data-action="close"]');
     closeBtn?.addEventListener('click', () => {
+      trackEvent('ext_gate_dismissed', {
+        viewCount: this.emailGateState?.viewCount ?? 0,
+      });
       this.setViewState('collapsed');
     });
 
@@ -2831,6 +2853,8 @@ export class CostOverlay {
         // Unlock with email
         this.emailGateState = await unlockWithEmail(email);
         console.log('[Bilkostnadskalkyl] Email unlocked:', email);
+
+        trackEvent('ext_gate_submitted');
 
         // Navigate to expanded view
         this.setViewState('expanded');

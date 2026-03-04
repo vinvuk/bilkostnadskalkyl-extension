@@ -10,6 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "posthog-js": "^1.342.1"
+  },
   "devDependencies": {
     "@types/chrome": "^0.0.260",
     "@vitest/runner": "^4.0.16",

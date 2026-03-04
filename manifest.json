@@ -22,7 +22,8 @@
     "https://wayke.se/*",
     "https://www.carla.se/*",
     "https://carla.se/*",
-    "https://dinbilkostnad.se/*"
+    "https://dinbilkostnad.se/*",
+    "https://eu.i.posthog.com/*"
   ],
   "action": {
     "default_icon": {
@@ -51,7 +52,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["overlay/overlay.css", "panel/panel.js", "panel/panel.css", "assets/icons/*"],
+      "resources": ["overlay/overlay.css", "panel/panel.js", "panel/panel.css", "assets/icons/*", "assets/fonts/*"],
       "matches": [
         "https://www.blocket.se/*",
         "https://blocket.se/*",
