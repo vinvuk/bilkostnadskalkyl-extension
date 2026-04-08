@@ -122,7 +122,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   ownershipYears: 5,
   insurance: 500,  // kr/mån (multipliceras med 12 i calculator)
   parking: 0,      // kr/mån (multipliceras med 12 i calculator)
-  financingType: 'cash',
+  financingType: 'loan',
   loanType: 'residual',  // Restvärdelån som standard (vanligast på bilsajter)
   loanAmount: 0,
   downPaymentPercent: 20,  // Kontantinsats 20%

@@ -10,13 +10,14 @@ import { isExtensionContextValid } from '../storage/preferences';
 import {
   loadEmailGateState,
   incrementViewCount,
-  unlockWithEmail,
   shouldShowEmailGate,
   getRemainingFreeViews,
   getFreeViewsLimit,
   EmailGateState,
+  initiateLogin,
 } from '../storage/emailGate';
-import { initTracker, trackEvent } from '../analytics/tracker';
+import { initTrackerIfConsented, enableTracker, disableTracker, trackEvent } from '../analytics/tracker';
+import { loadAnalyticsConsent, saveAnalyticsConsent } from '../storage/analyticsConsent';
 
 type ViewState = 'collapsed' | 'expanded' | 'methodology' | 'emailGate';
 
@@ -1892,6 +1893,45 @@ select.bkk-section-input {
 .bkk-gate-footer a:hover {
   text-decoration: underline;
 }
+
+.bkk-gate-sent-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 20px;
+  background: var(--bkk-surface);
+  border-radius: 8px;
+}
+
+.bkk-gate-sent-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--bkk-text-secondary);
+}
+
+.bkk-gate-sent-step-num {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bkk-accent) 0%, #10b981 100%);
+  color: white;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.bkk-gate-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 `;
 
 /**
@@ -1933,6 +1973,7 @@ export class CostOverlay {
   // Email gate state
   private emailGateState: EmailGateState | null = null;
   private isGateChecked = false;
+  private authCompletionHandler: ((message: { action: string }) => void) | null = null;
 
   // Breakdown display mode: 'year' or 'month'
   private breakdownDisplayMode: 'year' | 'month' = 'year';
@@ -2033,13 +2074,16 @@ export class CostOverlay {
     // Add resize listener to keep overlay in viewport
     window.addEventListener('resize', this.boundResize);
 
-    // Create container with Shadow DOM
+    // Remove any existing overlay before creating a new one (defense-in-depth)
+    document.querySelectorAll('#bilkostnadskalkyl-overlay').forEach(el => el.remove());
+
     this.container = document.createElement('div');
     this.container.id = 'bilkostnadskalkyl-overlay';
     this.shadow = this.container.attachShadow({ mode: 'closed' });
+    document.body.appendChild(this.container);
 
-    // Initialize anonymous tracker
-    initTracker();
+    // Initialize tracker only if user has previously consented
+    initTrackerIfConsented();
 
     // Load saved position and email gate state, then render
     this.loadPosition().then(async () => {
@@ -2061,8 +2105,15 @@ export class CostOverlay {
         viewCount: this.emailGateState?.viewCount ?? 0,
       });
 
+      // Show gate immediately if free views are exhausted
+      if (this.shouldShowGate()) {
+        this.viewState = 'emailGate';
+      }
+
       this.render();
-      document.body.appendChild(this.container);
+
+      // Show consent banner if user hasn't decided yet
+      this.maybeShowConsentBanner();
     });
   }
 
@@ -2195,6 +2246,8 @@ export class CostOverlay {
             </button>
           </div>
         </div>
+
+        ${this.renderFreeViewsBanner()}
 
         <div class="bkk-content">
           <div class="bkk-summary">
@@ -2725,9 +2778,29 @@ export class CostOverlay {
    * Checks if email gate should be shown
    * @returns true if user has used all free views and hasn't provided email
    */
+  /**
+   * Renders a small banner showing remaining free views, or nothing if unlocked.
+   */
+  private renderFreeViewsBanner(): string {
+    if (!this.emailGateState || this.emailGateState.isUnlocked) return '';
+    const limit = getFreeViewsLimit();
+    const remaining = Math.max(0, limit - this.emailGateState.viewCount);
+    if (remaining <= 0) return '';
+    return `
+      <div style="
+        padding: 6px 20px;
+        font-size: 12px;
+        color: var(--bkk-text-muted);
+        text-align: center;
+        border-bottom: 1px solid var(--bkk-border);
+        background: var(--bkk-surface);
+      ">${remaining} av ${limit} gratis visningar kvar</div>
+    `;
+  }
+
   private shouldShowGate(): boolean {
     if (!this.emailGateState) return false;
-    return !this.emailGateState.isUnlocked && this.emailGateState.viewCount > getFreeViewsLimit();
+    return !this.emailGateState.isUnlocked && this.emailGateState.viewCount >= getFreeViewsLimit();
   }
 
   /**
@@ -2849,23 +2922,53 @@ export class CostOverlay {
         return;
       }
 
-      try {
-        // Unlock with email
-        this.emailGateState = await unlockWithEmail(email);
-        console.log('[Bilkostnadskalkyl] Email unlocked:', email);
+      const submitBtn = this.shadow.querySelector('.bkk-gate-submit') as HTMLButtonElement;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Skickar...';
+      }
+      if (emailInput) emailInput.disabled = true;
 
-        trackEvent('ext_gate_submitted');
-
-        // Navigate to expanded view
-        this.setViewState('expanded');
-      } catch (error) {
-        console.error('[Bilkostnadskalkyl] Failed to unlock:', error);
+      const resetForm = (errorMsg: string) => {
         if (errorDiv) {
-          errorDiv.textContent = 'Något gick fel. Försök igen.';
+          errorDiv.textContent = errorMsg;
           errorDiv.style.display = 'block';
         }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 11 12 14 22 4"></polyline>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+            </svg>
+            Lås upp obegränsad åtkomst
+          `;
+        }
+        if (emailInput) emailInput.disabled = false;
+      };
+
+      try {
+        const result = await initiateLogin(email);
+
+        if (!result.success) {
+          resetForm(result.error || 'Något gick fel. Försök igen.');
+          return;
+        }
+
+        trackEvent('ext_gate_submitted');
+        this.renderEmailGateSent(email);
+      } catch (error) {
+        console.error('[Bilkostnadskalkyl] Failed to send magic link:', error);
+        resetForm('Kunde inte nå servern. Försök igen.');
       }
     });
+
+    // Listen for auth completion from background script
+    this.listenForAuthCompletion();
+
+    // Make gate draggable
+    const gateEl = this.shadow.querySelector('.bkk-email-gate');
+    this.attachDragListeners(gateEl);
 
     // Focus email input
     emailInput?.focus();
@@ -2884,6 +2987,203 @@ export class CostOverlay {
     // - Allows common special characters in local part
     const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
     return emailRegex.test(email);
+  }
+
+  /**
+   * Checks analytics consent and shows banner if user hasn't decided yet.
+   */
+  private async maybeShowConsentBanner(): Promise<void> {
+    try {
+      const consent = await loadAnalyticsConsent();
+      if (consent === null) {
+        this.renderConsentBanner();
+      }
+    } catch {
+      // Non-critical — don't break the overlay
+    }
+  }
+
+  /**
+   * Renders a small consent banner at the bottom of the overlay asking
+   * the user to opt in to anonymous usage statistics.
+   */
+  private renderConsentBanner(): void {
+    if (document.querySelector('.bkk-consent-banner')) return;
+    const banner = document.createElement('div');
+    banner.innerHTML = `
+      <style>
+        .bkk-consent-banner {
+          position: fixed;
+          bottom: 16px;
+          right: 16px;
+          z-index: 2147483646;
+          background: #1e293b;
+          color: #e2e8f0;
+          border: 1px solid #334155;
+          border-radius: 12px;
+          padding: 14px 18px;
+          font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+          font-size: 13px;
+          line-height: 1.5;
+          max-width: 340px;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+          animation: bkkConsentFade 0.3s ease;
+        }
+        @keyframes bkkConsentFade {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .bkk-consent-banner p {
+          margin: 0 0 12px 0;
+          color: #94a3b8;
+        }
+        .bkk-consent-btns {
+          display: flex;
+          gap: 8px;
+        }
+        .bkk-consent-btn {
+          flex: 1;
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: none;
+          font-size: 13px;
+          font-weight: 600;
+          font-family: inherit;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .bkk-consent-btn-yes {
+          background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+          color: #0f172a;
+        }
+        .bkk-consent-btn-yes:hover {
+          box-shadow: 0 4px 12px rgba(52, 211, 153, 0.3);
+        }
+        .bkk-consent-btn-no {
+          background: #334155;
+          color: #94a3b8;
+        }
+        .bkk-consent-btn-no:hover {
+          background: #475569;
+          color: #e2e8f0;
+        }
+      </style>
+      <div class="bkk-consent-banner">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" style="width:20px;height:20px;flex-shrink:0;">
+            <rect x="4" y="2" width="16" height="20" rx="2"/>
+            <rect x="7" y="5" width="10" height="4" rx="1"/>
+            <circle cx="8" cy="13" r="1" fill="#34d399"/>
+            <circle cx="12" cy="13" r="1" fill="#34d399"/>
+            <circle cx="16" cy="13" r="1" fill="#34d399"/>
+          </svg>
+          <span style="font-weight:700;font-size:13px;color:#e2e8f0;">Bilkostnadskalkyl</span>
+        </div>
+        <p>Hjälp oss förbättra tillägget — dela anonym användningsstatistik? Ingen personlig data samlas in.</p>
+        <div class="bkk-consent-btns">
+          <button class="bkk-consent-btn bkk-consent-btn-yes" data-consent="yes">Ja, okej</button>
+          <button class="bkk-consent-btn bkk-consent-btn-no" data-consent="no">Nej tack</button>
+        </div>
+      </div>
+    `;
+
+    const removeBanner = () => {
+      banner.remove();
+    };
+
+    banner.querySelector('[data-consent="yes"]')?.addEventListener('click', async () => {
+      await saveAnalyticsConsent(true);
+      enableTracker();
+      removeBanner();
+    });
+
+    banner.querySelector('[data-consent="no"]')?.addEventListener('click', async () => {
+      await saveAnalyticsConsent(false);
+      disableTracker();
+      removeBanner();
+    });
+
+    document.body.appendChild(banner);
+  }
+
+  /**
+   * Renders the "check your inbox" confirmation after magic link is sent
+   * @param email - The email address the magic link was sent to
+   */
+  private renderEmailGateSent(email: string): void {
+    const gateEl = this.shadow.querySelector('.bkk-email-gate');
+    if (!gateEl) return;
+
+    gateEl.innerHTML = `
+      <button class="bkk-gate-close" data-action="close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      <div class="bkk-gate-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <polyline points="22,4 12,13 2,4"/>
+        </svg>
+      </div>
+
+      <h2 class="bkk-gate-title">Kolla din inkorg</h2>
+      <p class="bkk-gate-subtitle">
+        Vi har skickat en verifieringslänk till <strong>${escapeHtml(email)}</strong>. Klicka på länken i mejlet för att låsa upp tillägget.
+      </p>
+
+      <div class="bkk-gate-sent-steps">
+        <div class="bkk-gate-sent-step">
+          <span class="bkk-gate-sent-step-num">1</span>
+          Öppna mejlet från Bilkostnadskalkyl
+        </div>
+        <div class="bkk-gate-sent-step">
+          <span class="bkk-gate-sent-step-num">2</span>
+          Klicka på verifieringslänken
+        </div>
+        <div class="bkk-gate-sent-step">
+          <span class="bkk-gate-sent-step-num">3</span>
+          Tillägget låses upp automatiskt
+        </div>
+      </div>
+
+      <div class="bkk-gate-footer">
+        Inget mejl? Kolla skräpposten eller försök igen om en minut.
+      </div>
+    `;
+
+    // Close button handler
+    const closeBtn = gateEl.querySelector('[data-action="close"]');
+    closeBtn?.addEventListener('click', () => {
+      this.setViewState('collapsed');
+    });
+  }
+
+  /**
+   * Listens for auth completion messages from background script.
+   * When the user completes the magic link flow, the background script
+   * sends an 'authCompleted' message which unlocks the gate.
+   */
+  private listenForAuthCompletion(): void {
+    // Remove any existing handler to prevent stacking
+    if (this.authCompletionHandler) {
+      chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
+    }
+    this.authCompletionHandler = async (message: { action: string }) => {
+      if (message.action === 'authCompleted') {
+        this.emailGateState = await loadEmailGateState();
+        if (this.emailGateState.isUnlocked) {
+          if (this.authCompletionHandler) {
+            chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
+            this.authCompletionHandler = null;
+          }
+          this.setViewState('expanded');
+        }
+      }
+    };
+    chrome.runtime.onMessage.addListener(this.authCompletionHandler);
   }
 
   /**
@@ -3781,6 +4081,11 @@ export class CostOverlay {
     document.removeEventListener('keydown', this.boundKeyDown);
     window.removeEventListener('resize', this.boundResize);
     this.container.remove();
+    document.querySelector('.bkk-consent-banner')?.parentElement?.remove();
+    if (this.authCompletionHandler) {
+      chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
+      this.authCompletionHandler = null;
+    }
   }
 
   /**

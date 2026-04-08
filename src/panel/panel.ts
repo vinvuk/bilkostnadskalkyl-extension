@@ -5,7 +5,13 @@
 
 // Panel styles
 const panelStyles = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(chrome-extension://__MSG_@@extension_id__/assets/fonts/dm-sans.woff2) format('woff2');
+}
 
 .bkk-panel-wrapper {
   --bkk-bg: rgba(15, 23, 42, 0.72);

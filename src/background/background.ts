@@ -6,46 +6,29 @@
 import { saveAuthState, clearAuthState, authenticatedFetch, fetchWithTimeout } from '../storage/auth';
 import { saveEmailGateState } from '../storage/emailGate';
 import { syncHistory } from '../storage/syncManager';
-import { initTracker, trackEvent } from '../analytics/tracker';
+import { initTrackerIfConsented, enableTracker, disableTracker, trackEvent } from '../analytics/tracker';
+import { onAnalyticsConsentChange } from '../storage/analyticsConsent';
 
-// Initialize anonymous tracker in service worker context
-initTracker();
+// Initialize tracker only if user has previously consented
+initTrackerIfConsented();
+
+// React to consent changes from popup or content script
+onAnalyticsConsentChange((granted) => {
+  if (granted) {
+    enableTracker();
+  } else {
+    disableTracker();
+  }
+});
 
 /**
- * Re-inject content scripts on extension install/update
- * This ensures the extension works immediately after install without page refresh
+ * Log extension install/update events.
+ * We intentionally do NOT re-inject content scripts here — doing so creates
+ * a second webpack runtime with its own module scope, causing duplicate overlays.
+ * The manifest content_scripts declaration handles injection on page navigation.
  */
-chrome.runtime.onInstalled.addListener(async (details) => {
+chrome.runtime.onInstalled.addListener((details) => {
   console.log('[Bilkostnadskalkyl BG] Extension installed/updated:', details.reason);
-
-  if (details.reason === 'install' || details.reason === 'update') {
-    // Get all tabs matching our content script URLs
-    const tabs = await chrome.tabs.query({
-      url: [
-        'https://www.blocket.se/*',
-        'https://blocket.se/*',
-        'https://www.wayke.se/*',
-        'https://wayke.se/*',
-        'https://www.carla.se/*',
-        'https://carla.se/*'
-      ]
-    });
-
-    // Re-inject content script into matching tabs
-    for (const tab of tabs) {
-      if (tab.id) {
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['content/index.js']
-          });
-          console.log('[Bilkostnadskalkyl BG] Re-injected content script into tab:', tab.id);
-        } catch (error) {
-          console.warn('[Bilkostnadskalkyl BG] Failed to re-inject:', error);
-        }
-      }
-    }
-  }
 });
 
 /**

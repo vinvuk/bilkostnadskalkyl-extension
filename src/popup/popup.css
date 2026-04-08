@@ -1,6 +1,12 @@
 /* Bilkostnadskalkyl Popup - Matching Panel Design */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../assets/fonts/dm-sans.woff2') format('woff2');
+}
 
 * {
   margin: 0;

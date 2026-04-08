@@ -7,6 +7,7 @@ import { HistoryItem } from '../types';
 import { loadHistory, clearHistory } from '../storage/history';
 import { loadAuthState, clearAuthState, authenticatedFetch } from '../storage/auth';
 import { initiateLogin } from '../storage/emailGate';
+import { loadAnalyticsConsent, saveAnalyticsConsent } from '../storage/analyticsConsent';
 
 let currentTab: 'about' | 'history' | 'account' = 'about';
 
@@ -17,6 +18,7 @@ async function init(): Promise<void> {
   attachEventListeners();
   await updateHistoryBadge();
   await updateAccountTab();
+  await updateAnalyticsToggle();
 }
 
 /**
@@ -53,6 +55,10 @@ function attachEventListeners(): void {
   // Data sharing toggle
   const dataSharingToggle = document.getElementById('dataSharingToggle') as HTMLInputElement;
   dataSharingToggle?.addEventListener('change', handleDataSharingToggle);
+
+  // Analytics consent toggle
+  const analyticsToggle = document.getElementById('analyticsToggle') as HTMLInputElement;
+  analyticsToggle?.addEventListener('change', handleAnalyticsToggle);
 
   // Listen for auth completion from background script
   chrome.runtime.onMessage.addListener((message) => {
@@ -209,6 +215,27 @@ async function handleDataSharingToggle(): Promise<void> {
       }
     }
   );
+}
+
+/**
+ * Updates the analytics toggle to reflect the stored consent state
+ */
+async function updateAnalyticsToggle(): Promise<void> {
+  const toggle = document.getElementById('analyticsToggle') as HTMLInputElement;
+  if (!toggle) return;
+
+  const consent = await loadAnalyticsConsent();
+  toggle.checked = consent === true;
+}
+
+/**
+ * Handles analytics toggle changes — saves consent to storage
+ */
+async function handleAnalyticsToggle(): Promise<void> {
+  const toggle = document.getElementById('analyticsToggle') as HTMLInputElement;
+  if (!toggle) return;
+
+  await saveAnalyticsConsent(toggle.checked);
 }
 
 /**

@@ -96,6 +96,10 @@ export async function saveEmailGateState(
  */
 export async function incrementViewCount(): Promise<EmailGateState> {
   const current = await loadEmailGateState();
+  // Stop counting once unlocked or past the free limit
+  if (current.isUnlocked || current.viewCount >= FREE_VIEWS_LIMIT) {
+    return current;
+  }
   const updated = {
     ...current,
     viewCount: current.viewCount + 1,
@@ -156,8 +160,7 @@ export async function initiateLogin(
   email: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { fetchWithTimeout } = await import('./auth');
-    const res = await fetchWithTimeout('https://dinbilkostnad.se/api/auth/send-magic-link', {
+    const res = await fetch('https://dinbilkostnad.se/api/auth/send-magic-link', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim(), source: 'extension' }),
