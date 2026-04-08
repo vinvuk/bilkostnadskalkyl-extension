@@ -2623,6 +2623,12 @@ export class CostOverlay {
       this.setViewState('methodology');
     });
 
+    // Free views banner → open gate early
+    this.shadow.querySelector('[data-action="show-gate"]')?.addEventListener('click', () => {
+      trackEvent('ext_gate_shown', { viewCount: this.emailGateState?.viewCount ?? 0, source: 'banner' });
+      this.setViewState('emailGate');
+    });
+
     // Section expand/collapse
     const sections = this.shadow.querySelectorAll('.bkk-section');
     sections.forEach(section => {
@@ -2785,16 +2791,17 @@ export class CostOverlay {
     if (!this.emailGateState || this.emailGateState.isUnlocked) return '';
     const limit = getFreeViewsLimit();
     const remaining = Math.max(0, limit - this.emailGateState.viewCount);
-    if (remaining <= 0) return '';
+    if (remaining <= 0 || remaining > 3) return '';
     return `
-      <div style="
+      <div data-action="show-gate" style="
         padding: 6px 20px;
         font-size: 12px;
         color: var(--bkk-text-muted);
         text-align: center;
         border-bottom: 1px solid var(--bkk-border);
         background: var(--bkk-surface);
-      ">${remaining} visningar kvar — registrera dig för obegränsat</div>
+        cursor: pointer;
+      ">Registrera dig för obegränsade visningar <span style="opacity:0.5">· ${remaining} kvar</span></div>
     `;
   }
 
