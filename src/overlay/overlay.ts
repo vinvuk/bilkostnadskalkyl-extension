@@ -2794,7 +2794,7 @@ export class CostOverlay {
         text-align: center;
         border-bottom: 1px solid var(--bkk-border);
         background: var(--bkk-surface);
-      ">${remaining} av ${limit} gratis visningar kvar</div>
+      ">${remaining} av ${limit} visningar kvar</div>
     `;
   }
 
@@ -2836,12 +2836,12 @@ export class CostOverlay {
 
         <h2 class="bkk-gate-title">Fortsätt använda Bilkostnadskalkyl</h2>
         <p class="bkk-gate-subtitle">
-          Du har använt dina ${freeLimit} gratis bilvisningar. Ange din e-post för att fortsätta använda tillägget obegränsat.
+          Du har använt dina ${freeLimit} visningar. Registrera dig med din e-post för att fortsätta — helt gratis.
         </p>
 
         <div class="bkk-gate-progress">
           <div class="bkk-gate-progress-label">
-            <span>Gratis visningar</span>
+            <span>Visningar</span>
             <span>${viewCount}/${freeLimit} använda</span>
           </div>
           <div class="bkk-gate-progress-bar">
@@ -2863,13 +2863,13 @@ export class CostOverlay {
               <polyline points="9 11 12 14 22 4"></polyline>
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
             </svg>
-            Lås upp obegränsad åtkomst
+            Registrera dig gratis
           </button>
           <div class="bkk-gate-error" id="gate-error" style="display: none;"></div>
         </form>
 
         <div class="bkk-gate-benefits">
-          <div class="bkk-gate-benefits-title">Med gratis e-postregistrering får du:</div>
+          <div class="bkk-gate-benefits-title">Med registrering får du:</div>
           <div class="bkk-gate-benefit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="20 6 9 17 4 12"></polyline>
@@ -2941,7 +2941,7 @@ export class CostOverlay {
               <polyline points="9 11 12 14 22 4"></polyline>
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
             </svg>
-            Lås upp obegränsad åtkomst
+            Registrera dig gratis
           `;
         }
         if (emailInput) emailInput.disabled = false;
