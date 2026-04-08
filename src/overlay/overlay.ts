@@ -2794,7 +2794,7 @@ export class CostOverlay {
         text-align: center;
         border-bottom: 1px solid var(--bkk-border);
         background: var(--bkk-surface);
-      ">${remaining} av ${limit} visningar kvar</div>
+      ">${remaining} visningar kvar — registrera dig för obegränsat</div>
     `;
   }
 
@@ -2834,20 +2834,10 @@ export class CostOverlay {
           </svg>
         </div>
 
-        <h2 class="bkk-gate-title">Fortsätt använda Bilkostnadskalkyl</h2>
+        <h2 class="bkk-gate-title">Du gillar Bilkostnadskalkyl!</h2>
         <p class="bkk-gate-subtitle">
-          Du har använt dina ${freeLimit} visningar. Registrera dig med din e-post för att fortsätta — helt gratis.
+          Du har kollat ${viewCount} bilar. Ange din e-post så fortsätter du — gratis, utan begränsning.
         </p>
-
-        <div class="bkk-gate-progress">
-          <div class="bkk-gate-progress-label">
-            <span>Visningar</span>
-            <span>${viewCount}/${freeLimit} använda</span>
-          </div>
-          <div class="bkk-gate-progress-bar">
-            <div class="bkk-gate-progress-fill" style="width: ${progressPercent}%"></div>
-          </div>
-        </div>
 
         <form class="bkk-gate-form" id="email-gate-form">
           <input
@@ -2869,7 +2859,6 @@ export class CostOverlay {
         </form>
 
         <div class="bkk-gate-benefits">
-          <div class="bkk-gate-benefits-title">Med registrering får du:</div>
           <div class="bkk-gate-benefit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="20 6 9 17 4 12"></polyline>
@@ -2880,18 +2869,14 @@ export class CostOverlay {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            Framtida uppdateringar och nya funktioner
+            Tar 10 sekunder — inget lösenord
           </div>
           <div class="bkk-gate-benefit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            Tips om hur du sparar pengar på bilköp
+            Ingen spam, inga kort
           </div>
-        </div>
-
-        <div class="bkk-gate-footer">
-          Vi respekterar din integritet. Ingen spam, bara användbar information.
         </div>
       </div>
     `;
