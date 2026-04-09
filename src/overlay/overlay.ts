@@ -1974,6 +1974,7 @@ export class CostOverlay {
   private emailGateState: EmailGateState | null = null;
   private isGateChecked = false;
   private authCompletionHandler: ((message: { action: string }) => void) | null = null;
+  private authPollInterval: number | null = null;
 
   // Breakdown display mode: 'year' or 'month'
   private breakdownDisplayMode: 'year' | 'month' = 'year';
@@ -3157,28 +3158,48 @@ export class CostOverlay {
   }
 
   /**
-   * Listens for auth completion messages from background script.
-   * When the user completes the magic link flow, the background script
-   * sends an 'authCompleted' message which unlocks the gate.
+   * Polls chrome.storage for auth completion every 3 seconds.
+   * More reliable than message-based approach since MV3 service workers
+   * can suspend before sending the authCompleted message.
    */
   private listenForAuthCompletion(): void {
-    // Remove any existing handler to prevent stacking
+    // Also keep the message listener as a fast path
     if (this.authCompletionHandler) {
       chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
     }
     this.authCompletionHandler = async (message: { action: string }) => {
       if (message.action === 'authCompleted') {
-        this.emailGateState = await loadEmailGateState();
-        if (this.emailGateState.isUnlocked) {
-          if (this.authCompletionHandler) {
-            chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
-            this.authCompletionHandler = null;
-          }
-          this.setViewState('expanded');
-        }
+        this.handleAuthCompleted();
       }
     };
     chrome.runtime.onMessage.addListener(this.authCompletionHandler);
+
+    // Poll storage as fallback (covers suspended service worker)
+    if (this.authPollInterval) clearInterval(this.authPollInterval);
+    this.authPollInterval = window.setInterval(async () => {
+      const state = await loadEmailGateState();
+      if (state.isUnlocked) {
+        this.handleAuthCompleted();
+      }
+    }, 3000);
+  }
+
+  /**
+   * Handles successful auth — cleans up listeners and shows expanded view.
+   */
+  private async handleAuthCompleted(): Promise<void> {
+    this.emailGateState = await loadEmailGateState();
+    if (!this.emailGateState.isUnlocked) return;
+
+    if (this.authCompletionHandler) {
+      chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
+      this.authCompletionHandler = null;
+    }
+    if (this.authPollInterval) {
+      clearInterval(this.authPollInterval);
+      this.authPollInterval = null;
+    }
+    this.setViewState('expanded');
   }
 
   /**
