@@ -152,6 +152,24 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 // Listen for messages from content scripts and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'sendMagicLink') {
+    fetch('https://dinbilkostnad.se/api/auth/send-magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: message.email, source: 'extension' }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          sendResponse({ success: false, error: data.error || 'Något gick fel.' });
+        } else {
+          sendResponse({ success: true });
+        }
+      })
+      .catch(() => sendResponse({ success: false, error: 'Kunde inte nå servern. Försök igen.' }));
+    return true; // async
+  }
+
   if (message.action === 'getHistory') {
     // Forward history request
     chrome.storage.local.get(['bkk_history'], (result) => {

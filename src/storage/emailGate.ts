@@ -160,16 +160,15 @@ export async function initiateLogin(
   email: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch('https://dinbilkostnad.se/api/auth/send-magic-link', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), source: 'extension' }),
+    // Route through background script to avoid CORS restrictions
+    // (content scripts run in the page's origin, background has no CORS)
+    const response = await chrome.runtime.sendMessage({
+      action: 'sendMagicLink',
+      email: email.trim(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      return { success: false, error: data.error || 'Något gick fel.' };
+    if (!response?.success) {
+      return { success: false, error: response?.error || 'Något gick fel.' };
     }
-    // Store email locally while waiting for verification
     await saveEmailGateState({ email: email.trim() });
     return { success: true };
   } catch {
