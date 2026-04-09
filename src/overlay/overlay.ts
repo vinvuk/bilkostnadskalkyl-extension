@@ -1974,7 +1974,7 @@ export class CostOverlay {
   private emailGateState: EmailGateState | null = null;
   private isGateChecked = false;
   private authCompletionHandler: ((message: { action: string }) => void) | null = null;
-  private authPollInterval: number | null = null;
+  private storageChangeHandler: ((changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => void) | null = null;
 
   // Breakdown display mode: 'year' or 'month'
   private breakdownDisplayMode: 'year' | 'month' = 'year';
@@ -3174,14 +3174,17 @@ export class CostOverlay {
     };
     chrome.runtime.onMessage.addListener(this.authCompletionHandler);
 
-    // Poll storage as fallback (covers suspended service worker)
-    if (this.authPollInterval) clearInterval(this.authPollInterval);
-    this.authPollInterval = window.setInterval(async () => {
-      const state = await loadEmailGateState();
-      if (state.isUnlocked) {
-        this.handleAuthCompleted();
-      }
-    }, 3000);
+    // Listen for storage changes (most reliable for cross-context updates)
+    if (!this.storageChangeHandler) {
+      this.storageChangeHandler = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+        if (areaName !== 'local') return;
+        const gateChange = changes['bilkostnadskalkyl_email_gate'];
+        if (gateChange?.newValue?.isUnlocked) {
+          this.handleAuthCompleted();
+        }
+      };
+      chrome.storage.onChanged.addListener(this.storageChangeHandler);
+    }
   }
 
   /**
@@ -3195,9 +3198,9 @@ export class CostOverlay {
       chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
       this.authCompletionHandler = null;
     }
-    if (this.authPollInterval) {
-      clearInterval(this.authPollInterval);
-      this.authPollInterval = null;
+    if (this.storageChangeHandler) {
+      chrome.storage.onChanged.removeListener(this.storageChangeHandler);
+      this.storageChangeHandler = null;
     }
     this.setViewState('expanded');
   }
