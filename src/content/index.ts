@@ -15,7 +15,10 @@ declare global {
 }
 
 if (window.__bilkostnadskalkylLoaded) {
+  // Stale instance detected (e.g. after extension reload) — clean up and abort.
+  // The new instance will take over.
   document.querySelectorAll('#bilkostnadskalkyl-overlay').forEach(el => el.remove());
+  throw new Error('[Bilkostnadskalkyl] Duplicate content script detected — aborting stale instance');
 }
 window.__bilkostnadskalkylLoaded = true;
 
@@ -23,7 +26,6 @@ window.__bilkostnadskalkylLoaded = true;
 function enforceSingleOverlay(): void {
   const overlays = document.querySelectorAll('#bilkostnadskalkyl-overlay');
   if (overlays.length > 1) {
-    // Keep the first (from newest code), remove later duplicates (from stale instances)
     for (let i = 1; i < overlays.length; i++) overlays[i].remove();
   }
 }

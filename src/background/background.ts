@@ -102,12 +102,18 @@ async function injectPanelScript(tabId: number): Promise<void> {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete' || !tab.url) return;
 
+  // Log all completed tab loads to debug auth callback detection
+  if (tab.url.includes('dinbilkostnad')) {
+    console.log('[Bilkostnadskalkyl BG] Tab updated with dinbilkostnad URL:', tab.url);
+  }
+
   try {
     const url = new URL(tab.url);
     // Exact pathname match to prevent spoofing
     if (url.origin !== 'https://dinbilkostnad.se' || url.pathname !== '/auth/extension-callback') {
       return;
     }
+    console.log('[Bilkostnadskalkyl BG] Auth callback detected, code:', url.searchParams.get('code'));
 
     const code = url.searchParams.get('code');
     if (!code) return;
