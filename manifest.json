@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilkostnadskalkyl",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Se total ägandekostnad direkt på bilannonserna",
   "icons": {
     "16": "assets/icons/icon16.png",
