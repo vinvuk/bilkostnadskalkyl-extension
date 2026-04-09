@@ -4105,6 +4105,10 @@ export class CostOverlay {
       chrome.runtime.onMessage.removeListener(this.authCompletionHandler);
       this.authCompletionHandler = null;
     }
+    if (this.storageChangeHandler) {
+      chrome.storage.onChanged.removeListener(this.storageChangeHandler);
+      this.storageChangeHandler = null;
+    }
   }
 
   /**
