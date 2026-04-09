@@ -2112,6 +2112,9 @@ export class CostOverlay {
 
       this.render();
 
+      // Listen for auth completion from background (works even if gate is closed)
+      this.listenForAuthCompletion();
+
       // Show consent banner if user hasn't decided yet
       this.maybeShowConsentBanner();
     });

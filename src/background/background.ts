@@ -139,8 +139,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       // Close the callback tab
       chrome.tabs.remove(tabId);
 
-      // Notify any open popups that auth is complete
+      // Notify popups and all content scripts that auth is complete
       chrome.runtime.sendMessage({ action: 'authCompleted', user: data }).catch(() => {});
+      chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, { action: 'authCompleted', user: data }).catch(() => {});
+          }
+        }
+      });
 
       // Trigger initial sync of any existing unsynced history
       syncHistory().catch(() => {});
