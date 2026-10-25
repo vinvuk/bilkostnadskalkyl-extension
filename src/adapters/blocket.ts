@@ -20,32 +20,17 @@ export function isBlocketListingPage(): boolean {
  * Checks if this is a leasing listing (not a purchase listing)
  * @returns true if this appears to be a leasing ad
  */
+export function classifyBlocketLeasing(saleType: string, title: string, category: string): boolean {
+  // Explicit listing metadata takes precedence over unrelated leasing promotions.
+  if (saleType) return /leasing/i.test(saleType);
+  return /leasing/i.test(category) || /privatleasing|företagsleasing|leasing\s*från|leasingkostnad/i.test(title);
+}
+
 function isLeasingListing(): boolean {
-  const pageText = document.body.innerText.toLowerCase();
-
-  // Check for leasing indicators
-  const leasingIndicators = [
-    /privatleasing/i,
-    /företagsleasing/i,
-    /leasing\s*från/i,
-    /leasingkostnad/i,
-    /kr\/mån\s*(?:ink|ex)/i,  // "kr/mån ink" or "kr/mån ex"
-    /månadskostnad\s*(?:ink|ex)/i,
-  ];
-
-  for (const pattern of leasingIndicators) {
-    if (pattern.test(pageText)) {
-      return true;
-    }
-  }
-
-  // Check advertising data for leasing category
-  const adData = extractAdvertisingData();
-  if (adData?.category?.[0]?.toLowerCase().includes('leasing')) {
-    return true;
-  }
-
-  return false;
+  const saleType = document.body.innerText.match(/Försäljningsform\s*[\r\n]+\s*([^\r\n]+)/i)?.[1]?.trim() || '';
+  const title = document.querySelector('h1')?.parentElement?.innerText || '';
+  const category = extractAdvertisingData()?.category?.[0] || '';
+  return classifyBlocketLeasing(saleType, title, category);
 }
 
 /**

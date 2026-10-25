@@ -16,7 +16,7 @@ import {
   EmailGateState,
   initiateLogin,
 } from '../storage/emailGate';
-import { initTrackerIfConsented, enableTracker, disableTracker, trackEvent } from '../analytics/tracker';
+import { enableTracker, disableTracker, trackEvent, trackEventWhenReady } from '../analytics/tracker';
 import { loadAnalyticsConsent, saveAnalyticsConsent } from '../storage/analyticsConsent';
 
 type ViewState = 'collapsed' | 'expanded' | 'methodology' | 'emailGate';
@@ -2083,9 +2083,6 @@ export class CostOverlay {
     this.shadow = this.container.attachShadow({ mode: 'closed' });
     document.body.appendChild(this.container);
 
-    // Initialize tracker only if user has previously consented
-    initTrackerIfConsented();
-
     // Load saved position and email gate state, then render
     this.loadPosition().then(async () => {
       this.applyPosition();
@@ -2100,18 +2097,18 @@ export class CostOverlay {
         this.isGateChecked = true;
       }
 
-      // Track that the overlay was shown on a car listing
-      trackEvent('ext_overlay_shown', {
-        site: this.siteName,
-        viewCount: this.emailGateState?.viewCount ?? 0,
-      });
-
       // Show gate immediately if free views are exhausted
       if (this.shouldShowGate()) {
         this.viewState = 'emailGate';
       }
 
       this.render();
+      void trackEventWhenReady('ext_overlay_shown', {
+        site: this.siteName,
+        viewCount: this.emailGateState?.viewCount ?? 0,
+        observation: 'render',
+        surface: this.viewState,
+      });
 
       // Listen for auth completion from background (works even if gate is closed)
       this.listenForAuthCompletion();
@@ -2181,6 +2178,7 @@ export class CostOverlay {
           this.setViewState('emailGate');
         } else {
           this.setViewState('expanded');
+          trackEvent('ext_overlay_expanded', { site: this.siteName });
         }
       }
     });
@@ -3089,7 +3087,17 @@ export class CostOverlay {
 
     banner.querySelector('[data-consent="yes"]')?.addEventListener('click', async () => {
       await saveAnalyticsConsent(true);
-      enableTracker();
+      await enableTracker();
+      trackEvent('ext_analytics_enabled', { entry_point: 'overlay_banner' });
+      // Observe only the UI still visible now, never replay earlier listings.
+      if (this.container?.isConnected) {
+        trackEvent('ext_overlay_shown', {
+          site: this.siteName,
+          viewCount: this.emailGateState?.viewCount ?? 0,
+          observation: 'consent_granted',
+          surface: this.viewState,
+        });
+      }
       removeBanner();
     });
 

@@ -11,10 +11,12 @@ const { mockLoadConsent } = vi.hoisted(() => ({
 
 vi.mock('../storage/analyticsConsent', () => ({
   loadAnalyticsConsent: mockLoadConsent,
+  onAnalyticsConsentChange: vi.fn(),
 }));
 
 // Mock chrome.runtime.getManifest
 vi.stubGlobal('chrome', {
+  storage: { local: { get: vi.fn().mockResolvedValue({ bkk_anon_id: 'test-installation' }), set: vi.fn().mockResolvedValue(undefined) } },
   runtime: {
     getManifest: () => ({ version: '1.3.0' }),
   },
@@ -24,7 +26,7 @@ vi.stubGlobal('chrome', {
 const mockFetch = vi.fn().mockResolvedValue({ ok: true });
 vi.stubGlobal('fetch', mockFetch);
 
-import { initTrackerIfConsented, enableTracker, disableTracker, trackEvent, resetTrackerState } from './tracker';
+import { initTrackerIfConsented, enableTracker, disableTracker, trackEvent, resetTrackerState, trackEventWhenReady } from './tracker';
 
 describe('Anonymous PostHog Tracker with Consent', () => {
   beforeEach(() => {
@@ -64,7 +66,7 @@ describe('Anonymous PostHog Tracker with Consent', () => {
     const payload = JSON.parse(options.body);
     expect(payload.api_key).toBe('phc_bxqRsVpWs3mENNvluG19JKMyt4pH5j4q6ujmLJw7nfY');
     expect(payload.event).toBe('ext_overlay_shown');
-    expect(payload.properties.distinct_id).toBe('anon');
+    expect(payload.properties.distinct_id).toBe('test-installation');
     expect(payload.properties.$ip).toBeNull();
     expect(payload.properties.site).toBe('blocket');
     expect(payload.properties.viewCount).toBe(3);
@@ -137,4 +139,52 @@ describe('Anonymous PostHog Tracker with Consent', () => {
     const [, options] = mockFetch.mock.calls[0];
     expect(options.keepalive).toBe(true);
   });
+});
+
+
+describe('Tracker readiness and consent races', () => {
+  beforeEach(() => { resetTrackerState(); mockFetch.mockClear(); mockLoadConsent.mockReset(); });
+  it('waits for stored consent before sending the visible overlay', async () => {
+    let resolve!: (value: boolean) => void;
+    mockLoadConsent.mockReturnValue(new Promise<boolean>(r => { resolve = r; }));
+    const pending = trackEventWhenReady('ext_overlay_shown');
+    expect(mockFetch).not.toHaveBeenCalled();
+    resolve(true);
+    await pending;
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+  it('does not replay a pre-consent observation after opt-in', async () => {
+    mockLoadConsent.mockResolvedValue(null);
+    await trackEventWhenReady('ext_overlay_shown');
+    await enableTracker();
+    expect(mockFetch).not.toHaveBeenCalled();
+    trackEvent('ext_overlay_shown', { observation: 'consent_granted' });
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+  it('does not undo opt-out when an older consent read finishes', async () => {
+    let resolve!: (value: boolean) => void;
+    mockLoadConsent.mockReturnValue(new Promise<boolean>(r => { resolve = r; }));
+    const pending = trackEventWhenReady('ext_overlay_shown');
+    disableTracker();
+    resolve(true);
+    await pending;
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+  it('drops events when persistent identity storage is unavailable', async () => {
+    vi.mocked(chrome.storage.local.get).mockRejectedValueOnce(new Error('unavailable'));
+    await enableTracker();
+    trackEvent('ext_overlay_shown');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+it('does not send an earlier pending observation when consent changes to granted', async () => {
+  resetTrackerState(); mockFetch.mockClear();
+  let resolve!: (value: boolean | null) => void;
+  mockLoadConsent.mockReturnValue(new Promise<boolean | null>(r => { resolve = r; }));
+  const pending = trackEventWhenReady('ext_overlay_shown');
+  await enableTracker();
+  resolve(null);
+  await pending;
+  expect(mockFetch).not.toHaveBeenCalled();
 });
