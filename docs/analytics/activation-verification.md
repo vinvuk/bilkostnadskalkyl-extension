@@ -98,7 +98,7 @@ Live PostHog project 112632 records (not synthetic API calls):
 
 Checks after the Blocket change: 23 focused tests passed; TypeScript and production build passed. Wayke/Carla were tested before the last build, whose only behavior change was Blocket classification; Blocket was tested after reload.
 
-Limitations: this verifies the unsigned browsing/calculator/consent path on one live listing per site, not every listing variation, email login, account sync, PDF export, or mathematical accuracy of every cost estimate. Simultaneous initial ID creation in multiple tabs remains untested. Wayke displayed the shortened model label `Volkswagen Id 2024`; the price and registration number matched. The popup footer still contains an old v1.3.0 label although the installed manifest and captured events show 1.3.2. These are noted, not silently counted as passed.
+Limitations: this verifies the unsigned browsing/calculator/consent path on one live listing per site, not every listing variation, email login, account sync, PDF export, or mathematical accuracy of every cost estimate. Simultaneous initial ID creation in multiple tabs remains untested. Wayke displayed the shortened model label `Volkswagen Id 2024`; the price and registration number matched. The popup footer had an old v1.3.0 label during testing; release preparation corrected it to v1.3.2. These are noted, not silently counted as passed.
 
 Screenshots are stored in the task outputs: testversion-132-installerad.png, wayke-kalkyl-132.png, carla-kalkyl-132.png, blocket-kalkyl-132.png, optout-utan-natverksanrop.png.
 

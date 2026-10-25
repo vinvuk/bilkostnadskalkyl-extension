@@ -177,6 +177,12 @@ Modellen bygger pa tre faktorer:
 
 ## Versionshistorik
 
+### v1.3.2
+- Fix: Kalkylen visas även på Wayke-adresser utan avslutande snedstreck.
+- Fix: Köpannonser på Blocket klassas inte som leasing på grund av orelaterad sidtext.
+- Förbättrat: Samtyckesstyrd statistik för visad och öppnad kalkyl, med beständigt installations-ID.
+- Fix: Popupens versionsetikett visar 1.3.2.
+
 ### v1.3.0
 - **Nytt:** Automatisk synk av bilvisningar till backend via `syncManager.ts`
 - **Nytt:** Synk triggas efter varje bilvisning, vid inloggning, vid samtycke och var 30:e minut (Chrome Alarms)
