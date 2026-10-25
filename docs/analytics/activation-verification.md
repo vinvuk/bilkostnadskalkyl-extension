@@ -62,3 +62,11 @@ Provide report timezone, date coverage and any country/OS filters. No credential
 2. Establish first usable calculator and return rates within the consenting sample.
 3. If installs exist but first-use fails, fix onboarding/adapters. If usage works but repeat/value is weak, stop feature investment pending external-user validation.
 4. Website click attribution through the store remains a separate consent-aware engineering task; no such attribution is implemented in this PR.
+
+## Wayke regression fix and installation evidence
+
+On 25 October, official store version 1.3.1 was installed successfully in a separate signed-out Chrome profile (`Bilkostnad test`). Existing user-profile installations were left untouched.
+
+The valid listing https://www.wayke.se/objekt/30f58e62-4334-4cd5-b2cc-eb5be1f69237 loaded, but no extension overlay appeared. The adapter required a slash after the listing identifier. Candidate 1.3.2 now accepts end-of-path or a slash after the identifier. Seven regression cases cover bare IDs, trailing slashes, slug paths, invalid suffixes, non-listing pages, and the legacy annons route.
+
+Focused checks: 20 adapter/tracker tests passed, TypeScript passed, production build passed. Browser acceptance for the local candidate is still pending; this does not establish successful extraction or ingestion.

@@ -19,8 +19,8 @@ export function isWaykeListingPage(): boolean {
     return false;
   }
 
-  // Match /objekt/{uuid}/{slug} pattern (case-insensitive)
-  const isObjektPage = /^\/objekt\/[a-f0-9-]+\//i.test(path);
+  // Match both /objekt/{uuid} and /objekt/{uuid}/{slug}.
+  const isObjektPage = /^\/objekt\/[a-f0-9-]+(?:\/|$)/i.test(path);
 
   // Also match /annons/ pattern if they use that
   const isAnnonsPage = /^\/annons\//i.test(path);
