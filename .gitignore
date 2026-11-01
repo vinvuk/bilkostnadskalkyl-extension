@@ -24,3 +24,5 @@ npm-debug.log*
 # Temporary/generated files
 generate-icons.html
 *.skill
+
+dist-handoff-test/
