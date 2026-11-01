@@ -17,6 +17,7 @@ import {
   initiateLogin,
 } from '../storage/emailGate';
 import { enableTracker, disableTracker, trackEvent, trackEventWhenReady } from '../analytics/tracker';
+import { openWebCalculator } from '../handoff/web';
 import { loadAnalyticsConsent, saveAnalyticsConsent } from '../storage/analyticsConsent';
 
 type ViewState = 'collapsed' | 'expanded' | 'methodology' | 'emailGate';
@@ -2570,6 +2571,8 @@ export class CostOverlay {
         </div>
 
         <div class="bkk-footer">
+          <button class="bkk-export-btn" data-action="open-web" style="margin-bottom:8px">Öppna i webbkalkylen ↗</button>
+          <div class="bkk-footer-info" style="margin-bottom:12px">Annonsuppgifter följer med. Webben räknar på kontantköp.</div>
           <button class="bkk-export-btn" data-action="export">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -2608,6 +2611,16 @@ export class CostOverlay {
     // Copy button
     this.shadow.querySelector('[data-action="copy"]')?.addEventListener('click', () => {
       this.copyToClipboard();
+    });
+
+    this.shadow.querySelector('[data-action="open-web"]')?.addEventListener('click', () => {
+      try {
+        const handoffId = openWebCalculator(this.vehicleData, window.location.href);
+        void trackEventWhenReady('ext_web_calculator_clicked', { site: this.siteName.toLowerCase(), handoff_id: handoffId, handoff_version: 1 });
+      } catch {
+        const button = this.shadow.querySelector('[data-action="open-web"]');
+        if (button) button.textContent = 'Kunde inte öppna – kontrollera annonsen';
+      }
     });
 
     // Export PDF button

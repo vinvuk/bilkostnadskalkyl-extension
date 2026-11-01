@@ -1,4 +1,8 @@
 const path = require('path');
+const webpack = require('webpack');
+const webDestination = process.env.BKK_WEB_CALCULATOR_URL || 'https://dinbilkostnad.se/bilkostnad/billigaste-bilen';
+const webUrl = new URL(webDestination);
+if (webUrl.protocol !== 'https:' || (webUrl.hostname !== 'dinbilkostnad.se' && !webUrl.hostname.endsWith('.vercel.app')) || webUrl.pathname !== '/bilkostnad/billigaste-bilen' || webUrl.search || webUrl.hash) throw new Error('Invalid web calculator destination');
 const CopyPlugin = require('copy-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
@@ -10,7 +14,7 @@ module.exports = {
     'popup/popup': './src/popup/popup.ts',
   },
   output: {
-    path: path.resolve(__dirname, 'dist'),
+    path: path.resolve(__dirname, process.env.BKK_WEB_CALCULATOR_URL ? 'dist-handoff-test' : 'dist'),
     filename: '[name].js',
     clean: true,
     publicPath: '/',
@@ -33,6 +37,7 @@ module.exports = {
     extensions: ['.ts', '.js'],
   },
   plugins: [
+    new webpack.DefinePlugin({ __WEB_CALCULATOR_URL__: JSON.stringify(webDestination) }),
     new MiniCssExtractPlugin({
       filename: '[name].css',
     }),
